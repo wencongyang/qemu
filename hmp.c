@@ -131,6 +131,30 @@ void hmp_info_mice(Monitor *mon, const QDict *qdict)
     qapi_free_MouseInfoList(mice_list);
 }
 
+static void hmp_info_migrate_stats(Monitor *mon, MigrationStats *ram)
+{
+    monitor_printf(mon, "transferred ram: %" PRIu64 " kbytes\n",
+                   ram->transferred >> 10);
+    monitor_printf(mon, "throughput: %0.2f mbps\n",
+                   ram->mbps);
+    monitor_printf(mon, "remaining ram: %" PRIu64 " kbytes\n",
+                   ram->remaining >> 10);
+    monitor_printf(mon, "total ram: %" PRIu64 " kbytes\n",
+                   ram->total >> 10);
+    monitor_printf(mon, "duplicate: %" PRIu64 " pages\n",
+                   ram->duplicate);
+    monitor_printf(mon, "skipped: %" PRIu64 " pages\n",
+                   ram->skipped);
+    monitor_printf(mon, "normal: %" PRIu64 " pages\n",
+                   ram->normal);
+    monitor_printf(mon, "normal bytes: %" PRIu64 " kbytes\n",
+                   ram->normal_bytes >> 10);
+    if (ram->dirty_pages_rate) {
+        monitor_printf(mon, "dirty pages rate: %" PRIu64 " pages\n",
+                       ram->dirty_pages_rate);
+    }
+}
+
 void hmp_info_migrate(Monitor *mon, const QDict *qdict)
 {
     MigrationInfo *info;
@@ -165,26 +189,11 @@ void hmp_info_migrate(Monitor *mon, const QDict *qdict)
     }
 
     if (info->has_ram) {
-        monitor_printf(mon, "transferred ram: %" PRIu64 " kbytes\n",
-                       info->ram->transferred >> 10);
-        monitor_printf(mon, "throughput: %0.2f mbps\n",
-                       info->ram->mbps);
-        monitor_printf(mon, "remaining ram: %" PRIu64 " kbytes\n",
-                       info->ram->remaining >> 10);
-        monitor_printf(mon, "total ram: %" PRIu64 " kbytes\n",
-                       info->ram->total >> 10);
-        monitor_printf(mon, "duplicate: %" PRIu64 " pages\n",
-                       info->ram->duplicate);
-        monitor_printf(mon, "skipped: %" PRIu64 " pages\n",
-                       info->ram->skipped);
-        monitor_printf(mon, "normal: %" PRIu64 " pages\n",
-                       info->ram->normal);
-        monitor_printf(mon, "normal bytes: %" PRIu64 " kbytes\n",
-                       info->ram->normal_bytes >> 10);
-        if (info->ram->dirty_pages_rate) {
-            monitor_printf(mon, "dirty pages rate: %" PRIu64 " pages\n",
-                           info->ram->dirty_pages_rate);
-        }
+        hmp_info_migrate_stats(mon, info->ram);
+    }
+
+    if (info->has_last_ram) {
+        hmp_info_migrate_stats(mon, info->last_ram);
     }
 
     if (info->has_disk) {

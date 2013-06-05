@@ -4212,6 +4212,8 @@ int main(int argc, char **argv, char **envp)
     default_drive(default_sdcard, snapshot, IF_SD, 0, SD_OPTS);
 
     register_savevm_live(NULL, "ram", 0, 4, &savevm_ram_handlers, NULL);
+    register_savevm(NULL, "info", -1, STATS_VERSION, migrate_info_save,
+                    migrate_info_load, NULL);
 
     if (nb_numa_nodes > 0) {
         int i;

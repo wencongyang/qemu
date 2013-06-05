@@ -23,6 +23,10 @@
 #include "migration/block.h"
 #include "qemu/thread.h"
 #include "qmp-commands.h"
+#include "qapi/qmp/qobject.h"
+#include "qapi/qmp/qstring.h"
+#include "qapi/qmp/qint.h"
+#include "qapi/qmp/qjson.h"
 #include "trace.h"
 
 //#define DEBUG_MIGRATION
@@ -67,7 +71,15 @@ MigrationState *migrate_get_current(void)
         .bandwidth_limit = MAX_THROTTLE,
         .xbzrle_cache_size = DEFAULT_MIGRATE_CACHE_SIZE,
         .mbps = -1,
+        .last_info = NULL,
     };
+
+    if (!current_migration.last_info) {
+        current_migration.last_info = g_malloc0(sizeof(MigrationInfo));
+        memset(current_migration.last_info, 0, sizeof(MigrationInfo));
+        current_migration.last_info->ram = g_malloc0(sizeof(MigrationStats));
+        memset(current_migration.last_info->ram, 0, sizeof(MigrationStats));
+    }
 
     return &current_migration;
 }
@@ -178,6 +190,85 @@ static void get_xbzrle_cache_stats(MigrationInfo *info)
     }
 }
 
+static void get_last_ram_info(MigrationState *s, MigrationInfo *info)
+{
+    memcpy(info, s->last_info, sizeof(MigrationInfo));
+    info->has_last_ram = true;
+    info->last_ram = g_malloc0(sizeof(MigrationStats));
+    memcpy(info->last_ram, s->last_info->ram, sizeof(MigrationStats)); 
+    info->has_ram = false;
+}
+
+void migrate_info_save(QEMUFile *f, void *opaque)
+{
+    MigrationState *s = migrate_get_current();
+    QObject *info;
+    QString * qjson;
+    QInt *downtime;
+    uint32_t len;
+    const char * json;
+
+    qmp_marshal_input_query_migrate(NULL, NULL, &info);
+    downtime = qint_from_int(qemu_get_clock_ms(rt_clock) - s->start_time);
+    qdict_put_obj(qobject_to_qdict(info), "downtime",
+                    QOBJECT(downtime));
+
+    qjson = qobject_to_json(info);
+    json = qstring_get_str(qjson);
+
+    len = strlen(json);
+    qemu_put_be32(f, len);
+    qemu_put_buffer(f, (uint8_t *)json, len);
+
+    qemu_fflush(f);
+
+    qobject_decref(QOBJECT(qjson));
+    qobject_decref(info);
+    qobject_decref(QOBJECT(downtime));
+}
+
+int migrate_info_load(QEMUFile *f, void *opaque, int version_id)
+{
+    uint32_t len = qemu_get_be32(f);
+    char * json = g_malloc0(len);
+    QDict *info = qdict_new();
+
+    qemu_get_buffer(f, (uint8_t *)json, len);
+    qdict_put_obj(info, "info", qobject_from_json(json));
+    DPRINTF("migrate_info_load: %s\n", json);
+    g_free(json);
+    qmp_marshal_input_migrate_set_last_info(NULL, info, NULL);
+    qobject_decref(QOBJECT(info));
+
+    return 0;
+}
+
+void qmp_migrate_set_last_info(MigrationInfo *info, Error **errp)
+{
+    MigrationState *s = migrate_get_current();
+    MigrationStats *old = s->last_info->ram;
+
+    memcpy(old, info->ram, sizeof(MigrationStats));
+    memcpy(s->last_info, info, sizeof(MigrationInfo));
+
+    s->last_info->ram = old;
+    s->last_info->status = NULL;
+    s->last_info->has_status = false;
+}
+
+static void get_ram_stats(MigrationState *s, MigrationInfo *info)
+{
+    info->has_ram = true;
+    info->ram = g_malloc0(sizeof(*info->ram));
+    info->ram->transferred = ram_bytes_transferred();
+    info->ram->total = ram_bytes_total();
+    info->ram->duplicate = dup_mig_pages_transferred();
+    info->ram->skipped = skipped_mig_pages_transferred();
+    info->ram->normal = norm_mig_pages_transferred();
+    info->ram->normal_bytes = norm_mig_bytes_transferred();
+    info->ram->mbps = s->mbps;
+}
+
 MigrationInfo *qmp_query_migrate(Error **errp)
 {
     MigrationInfo *info = g_malloc0(sizeof(*info));
@@ -186,6 +277,9 @@ MigrationInfo *qmp_query_migrate(Error **errp)
     switch (s->state) {
     case MIG_STATE_SETUP:
         /* no migration has happened ever */
+        get_last_ram_info(s, info);
+        info->has_status = true;
+        info->status = g_strdup("last");
         break;
     case MIG_STATE_ACTIVE:
         info->has_status = true;
@@ -196,17 +290,9 @@ MigrationInfo *qmp_query_migrate(Error **errp)
         info->has_expected_downtime = true;
         info->expected_downtime = s->expected_downtime;
 
-        info->has_ram = true;
-        info->ram = g_malloc0(sizeof(*info->ram));
-        info->ram->transferred = ram_bytes_transferred();
-        info->ram->remaining = ram_bytes_remaining();
-        info->ram->total = ram_bytes_total();
-        info->ram->duplicate = dup_mig_pages_transferred();
-        info->ram->skipped = skipped_mig_pages_transferred();
-        info->ram->normal = norm_mig_pages_transferred();
-        info->ram->normal_bytes = norm_mig_bytes_transferred();
+        get_ram_stats(s, info);
         info->ram->dirty_pages_rate = s->dirty_pages_rate;
-        info->ram->mbps = s->mbps;
+        info->ram->remaining = ram_bytes_remaining();
 
         if (blk_mig_active()) {
             info->has_disk = true;
@@ -223,28 +309,23 @@ MigrationInfo *qmp_query_migrate(Error **errp)
 
         info->has_status = true;
         info->status = g_strdup("completed");
+        info->has_total_time = true;
         info->total_time = s->total_time;
         info->has_downtime = true;
         info->downtime = s->downtime;
 
-        info->has_ram = true;
-        info->ram = g_malloc0(sizeof(*info->ram));
-        info->ram->transferred = ram_bytes_transferred();
+        get_ram_stats(s, info);
         info->ram->remaining = 0;
-        info->ram->total = ram_bytes_total();
-        info->ram->duplicate = dup_mig_pages_transferred();
-        info->ram->skipped = skipped_mig_pages_transferred();
-        info->ram->normal = norm_mig_pages_transferred();
-        info->ram->normal_bytes = norm_mig_bytes_transferred();
-        info->ram->mbps = s->mbps;
         break;
     case MIG_STATE_ERROR:
         info->has_status = true;
         info->status = g_strdup("failed");
+        get_ram_stats(s, info);
         break;
     case MIG_STATE_CANCELLED:
         info->has_status = true;
         info->status = g_strdup("cancelled");
+        get_ram_stats(s, info);
         break;
     }
 
@@ -521,9 +602,9 @@ static void *migration_thread(void *opaque)
     int64_t sleep_time = 0;
     int64_t initial_bytes = 0;
     int64_t max_size = 0;
-    int64_t start_time = initial_time;
     bool old_vm_running = false;
 
+    s->start_time = initial_time;
     DPRINTF("beginning savevm\n");
     qemu_savevm_state_begin(s->file, &s->params);
 
@@ -540,7 +621,7 @@ static void *migration_thread(void *opaque)
             } else {
                 DPRINTF("done iterating\n");
                 qemu_mutex_lock_iothread();
-                start_time = qemu_get_clock_ms(rt_clock);
+                s->start_time = qemu_get_clock_ms(rt_clock);
                 qemu_system_wakeup_request(QEMU_WAKEUP_REASON_OTHER);
                 old_vm_running = runstate_is_running();
                 vm_stop_force_state(RUN_STATE_FINISH_MIGRATE);
@@ -597,7 +678,7 @@ static void *migration_thread(void *opaque)
     if (s->state == MIG_STATE_COMPLETED) {
         int64_t end_time = qemu_get_clock_ms(rt_clock);
         s->total_time = end_time - s->total_time;
-        s->downtime = end_time - start_time;
+        s->downtime = end_time - s->start_time;
         runstate_set(RUN_STATE_POSTMIGRATE);
     } else {
         if (old_vm_running) {

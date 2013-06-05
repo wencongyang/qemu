@@ -555,6 +555,9 @@
 #       status, only returned if status is 'active' or
 #       'completed'. 'comppleted' (since 1.2)
 #
+# @last_ram: #optional @MigrationStats containing the _last_ migration
+#        performance statistics from a previous migration. (since 1.6)
+#
 # @disk: #optional @MigrationStats containing detailed disk migration
 #        status, only returned if status is 'active' and it is a block
 #        migration
@@ -583,7 +586,8 @@
            '*xbzrle-cache': 'XBZRLECacheStats',
            '*total-time': 'int',
            '*expected-downtime': 'int',
-           '*downtime': 'int'} }
+           '*downtime': 'int',
+           '*last_ram', 'MigrationStats'} }
 
 ##
 # @query-migrate
@@ -640,6 +644,20 @@
 ##
 { 'command': 'migrate-set-capabilities',
   'data': { 'capabilities': ['MigrationCapabilityStatus'] } }
+
+##
+# @migrate-set-last-info
+#
+# Store migration info/statistics. Currently only used by the migration
+# protocol itself to tell the destination about the results before
+# the source QEMU is destroyed.
+#
+# @info: json array of MigrationInfo statistics from a previous migration.
+#
+# Since: 1.6
+##
+{ 'command': 'migrate-set-last-info',
+  'data': { 'info': 'MigrationInfo' } }
 
 ##
 # @query-migrate-capabilities
