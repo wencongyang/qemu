@@ -2669,6 +2669,34 @@ EQMP
         .params     = "capability:s,state:b",
 	.mhandler.cmd_new = qmp_marshal_input_migrate_set_capabilities,
     },
+
+SQMP
+migrate-set-last-info
+------------------------
+
+Store migration info/statistics. Currently only used by the migration
+protocol itself to tell the destination about the results before
+the source QEMU is destroyed.
+
+NOTE: There is no need to execute this command explicitly except for
+testing, as this information is already transmitted as part of the 
+migration protocol. Thus, there is no HMP command made available for
+this option - only QMP.
+
+Arguments:
+- info: MigrationInfo statistics dictionary (json-object)
+
+Example:
+
+-> { "execute": "migrate-set-last-info" , "arguments":
+     { "info": { "downtime": 1234, "ram" : { "transferred" : 5678 } } } }
+EQMP
+    {
+        .name       = "migrate-set-last-info",
+        .args_type  = "info:O",
+        .mhandler.cmd_new = qmp_marshal_input_migrate_set_last_info,
+    },
+
 SQMP
 query-migrate-capabilities
 --------------------------

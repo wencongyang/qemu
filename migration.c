@@ -71,15 +71,7 @@ MigrationState *migrate_get_current(void)
         .bandwidth_limit = MAX_THROTTLE,
         .xbzrle_cache_size = DEFAULT_MIGRATE_CACHE_SIZE,
         .mbps = -1,
-        .last_info = NULL,
     };
-
-    if (!current_migration.last_info) {
-        current_migration.last_info = g_malloc0(sizeof(MigrationInfo));
-        memset(current_migration.last_info, 0, sizeof(MigrationInfo));
-        current_migration.last_info->ram = g_malloc0(sizeof(MigrationStats));
-        memset(current_migration.last_info->ram, 0, sizeof(MigrationStats));
-    }
 
     return &current_migration;
 }
@@ -190,15 +182,35 @@ static void get_xbzrle_cache_stats(MigrationInfo *info)
     }
 }
 
+/*
+ * Only if in 'setup' state, return statistics (if available) from
+ * the previous migration to the user.
+ */
 static void get_last_ram_info(MigrationState *s, MigrationInfo *info)
 {
-    memcpy(info, s->last_info, sizeof(MigrationInfo));
-    info->has_last_ram = true;
-    info->last_ram = g_malloc0(sizeof(MigrationStats));
-    memcpy(info->last_ram, s->last_info->ram, sizeof(MigrationStats)); 
+    if (!s->last_info) {
+        s->last_info = g_malloc0(sizeof(MigrationInfo));
+    } else {
+        memcpy(info, s->last_info, sizeof(*info));
+    }
+
+    if (s->last_info->has_ram) {
+        info->has_last_ram = true;
+        info->last_ram = g_malloc0(sizeof(MigrationStats));
+        memcpy(info->last_ram, s->last_info->ram, sizeof(MigrationStats)); 
+    }
+
     info->has_ram = false;
 }
 
+/*
+ * 'last_info' is not a device, per-se, but the existing device state
+ * state transfer mechanism is very easy to use for this purpose, as
+ * we're only (currently) interested in communicating this information
+ * in-band after the last migration round has completed (as opposed to
+ * out-of-band, which would require more intelligence in the management
+ * software, for example).
+ */
 void migrate_info_save(QEMUFile *f, void *opaque)
 {
     MigrationState *s = migrate_get_current();
@@ -208,11 +220,18 @@ void migrate_info_save(QEMUFile *f, void *opaque)
     uint32_t len;
     const char * json;
 
+    /*
+     * Use the existing QMP command to get the statistics.
+     */
     qmp_marshal_input_query_migrate(NULL, NULL, &info);
     downtime = qint_from_int(qemu_get_clock_ms(rt_clock) - s->start_time);
     qdict_put_obj(qobject_to_qdict(info), "downtime",
                     QOBJECT(downtime));
 
+    /*
+     * Serialize into raw JSON and send to other side only
+     * after the last migration round has completed.
+     */
     qjson = qobject_to_json(info);
     json = qstring_get_str(qjson);
 
@@ -227,13 +246,24 @@ void migrate_info_save(QEMUFile *f, void *opaque)
     qobject_decref(QOBJECT(downtime));
 }
 
+/*
+ * The source has nearly completed the migration and has sent
+ * out a JSON description of the migration performance statistics.
+ * Load it and use the QMP 'migrate-set-last-info' command to automatically
+ * convert it into a usable structure.
+ */
 int migrate_info_load(QEMUFile *f, void *opaque, int version_id)
 {
     uint32_t len = qemu_get_be32(f);
-    char * json = g_malloc0(len);
+    char * json = g_malloc0(len + 1);
     QDict *info = qdict_new();
 
     qemu_get_buffer(f, (uint8_t *)json, len);
+
+    /*
+     * Construct a { 'info' : MigrationInfo } structure
+     * out of the resulting JSON for QMP to parse the input.
+     */
     qdict_put_obj(info, "info", qobject_from_json(json));
     DPRINTF("migrate_info_load: %s\n", json);
     g_free(json);
@@ -243,16 +273,31 @@ int migrate_info_load(QEMUFile *f, void *opaque, int version_id)
     return 0;
 }
 
+/*
+ * JSON from the migration source was received - now save it.
+ */
 void qmp_migrate_set_last_info(MigrationInfo *info, Error **errp)
 {
     MigrationState *s = migrate_get_current();
-    MigrationStats *old = s->last_info->ram;
 
-    memcpy(old, info->ram, sizeof(MigrationStats));
-    memcpy(s->last_info, info, sizeof(MigrationInfo));
+    if (!info) {
+        fprintf(stderr, "error: migrate-set-last-info dictionary is empty!\n");
+        return;
+    }
 
-    s->last_info->ram = old;
-    s->last_info->status = NULL;
+    if (!s->last_info) {
+        s->last_info = g_malloc0(sizeof(*s->last_info));
+    } else {
+        g_free(s->last_info->ram);
+        memcpy(s->last_info, info, sizeof(*s->last_info));
+        s->last_info->ram = NULL;
+    }
+
+    if (info->has_ram) {
+        s->last_info->ram = g_malloc0(sizeof(*s->last_info->ram));
+        memcpy(s->last_info->ram, info->ram, sizeof(*s->last_info->ram));
+    }
+
     s->last_info->has_status = false;
 }
 
