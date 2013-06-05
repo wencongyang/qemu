@@ -265,7 +265,7 @@ int migrate_info_load(QEMUFile *f, void *opaque, int version_id)
      * out of the resulting JSON for QMP to parse the input.
      */
     qdict_put_obj(info, "info", qobject_from_json(json));
-    DPRINTF("migrate_info_load: %s\n", json);
+    fprintf(stderr, "migrate_info_load: %s\n", json);
     g_free(json);
     qmp_marshal_input_migrate_set_last_info(NULL, info, NULL);
     qobject_decref(QOBJECT(info));
@@ -289,9 +289,10 @@ void qmp_migrate_set_last_info(MigrationInfo *info, Error **errp)
         s->last_info = g_malloc0(sizeof(*s->last_info));
     } else {
         g_free(s->last_info->ram);
-        memcpy(s->last_info, info, sizeof(*s->last_info));
         s->last_info->ram = NULL;
     }
+
+    memcpy(s->last_info, info, sizeof(*s->last_info));
 
     if (info->has_ram) {
         s->last_info->ram = g_malloc0(sizeof(*s->last_info->ram));
