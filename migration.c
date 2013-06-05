@@ -289,10 +289,10 @@ void qmp_migrate_set_last_info(MigrationInfo *info, Error **errp)
         s->last_info = g_malloc0(sizeof(*s->last_info));
     } else {
         g_free(s->last_info->ram);
-        s->last_info->ram = NULL;
     }
 
     memcpy(s->last_info, info, sizeof(*s->last_info));
+    s->last_info->ram = NULL;
 
     if (info->has_ram) {
         s->last_info->ram = g_malloc0(sizeof(*s->last_info->ram));
