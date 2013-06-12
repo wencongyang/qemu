@@ -448,6 +448,7 @@ static int ram_save_block(QEMUFile *f, bool last_stage)
                 ram_bulk_stage = false;
             }
         } else {
+            int ret;
             uint8_t *p;
             int cont = (block == last_sent_block) ?
                 RAM_SAVE_FLAG_CONTINUE : 0;
@@ -455,10 +456,12 @@ static int ram_save_block(QEMUFile *f, bool last_stage)
             p = memory_region_get_ram_ptr(mr) + offset;
 
             /* In doubt sent page as normal */
-            bytes_sent = ram_control_save_page(f, block->offset,
-                                       offset, TARGET_PAGE_SIZE);
-            if (bytes_sent != RAM_SAVE_CONTROL_NOT_SUPP) {
-                if (bytes_sent != RAM_SAVE_CONTROL_DELAYED) {
+            bytes_sent = -1;
+            ret = ram_control_save_page(f, block->offset,
+                               offset, TARGET_PAGE_SIZE, &bytes_sent);
+
+            if (ret != RAM_SAVE_CONTROL_NOT_SUPP) {
+                if (ret != RAM_SAVE_CONTROL_DELAYED) {
                     if (bytes_sent > 0) {
                         acct_info.norm_pages++;
                     } else if (bytes_sent == 0) {
@@ -486,13 +489,11 @@ static int ram_save_block(QEMUFile *f, bool last_stage)
             }
 
             /* XBZRLE overflow or normal page */
-            if (bytes_sent == RAM_SAVE_CONTROL_NOT_SUPP) {
+            if (bytes_sent == -1) {
                 bytes_sent = save_block_hdr(f, block, offset, cont, RAM_SAVE_FLAG_PAGE);
                 qemu_put_buffer_async(f, p, TARGET_PAGE_SIZE);
                 bytes_sent += TARGET_PAGE_SIZE;
                 acct_info.norm_pages++;
-            } else if(bytes_sent == RAM_SAVE_CONTROL_DELAYED) {
-                bytes_sent = 1;
             }
 
             /* if page is unmodified, continue to the next */
@@ -514,9 +515,9 @@ void acct_update_position(QEMUFile *f, size_t size, bool zero)
 {
     uint64_t pages = size / TARGET_PAGE_SIZE;
     if (zero) {
-        acct_info.dup_pages += pages; 
+        acct_info.dup_pages += pages;
     } else {
-        acct_info.norm_pages += pages; 
+        acct_info.norm_pages += pages;
         bytes_transferred += size;
         qemu_update_position(f, size);
     }

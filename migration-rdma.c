@@ -26,7 +26,7 @@
 #include <string.h>
 #include <rdma/rdma_cma.h>
 
-#define DEBUG_RDMA
+//#define DEBUG_RDMA
 //#define DEBUG_RDMA_VERBOSE
 //#define DEBUG_RDMA_REALLY_VERBOSE
 
@@ -427,7 +427,8 @@ static inline uint8_t *ram_chunk_start(RDMALocalBlock *rdma_ram_block,
 
 static inline uint8_t *ram_chunk_end(RDMALocalBlock *rdma_ram_block, uint64_t i)
 {
-    uint8_t *result = ram_chunk_start(rdma_ram_block, i) + (1UL << RDMA_REG_CHUNK_SHIFT);
+    uint8_t *result = ram_chunk_start(rdma_ram_block, i) +
+                                         (1UL << RDMA_REG_CHUNK_SHIFT);
 
     if (result > (rdma_ram_block->local_host_addr + rdma_ram_block->length)) {
         result = rdma_ram_block->local_host_addr + rdma_ram_block->length;
@@ -773,7 +774,7 @@ static void qemu_rdma_dereg_ram_blocks(RDMAContext *rdma,
  * and then propagates the remote ram block descriptions to his local copy.
  */
 static int qemu_rdma_process_remote_blocks(RDMAContext *rdma, int num_blocks,
-                                           Error ** errp)
+                                           Error **errp)
 {
     RDMALocalBlocks *local = &rdma->local_ram_blocks;
     int i, j;
@@ -946,7 +947,7 @@ static const char *print_wrid(int wrid)
 {
     if (wrid >= RDMA_WRID_RECV_CONTROL) {
         return wrid_desc[RDMA_WRID_RECV_CONTROL];
-    } else if (wrid >= RDMA_WRID_RDMA_WRITE_START 
+    } else if (wrid >= RDMA_WRID_RDMA_WRITE_START
                 && wrid <= RDMA_WRID_RDMA_WRITE_STOP) {
         return wrid_desc[RDMA_WRID_RDMA_WRITE_START];
     }
@@ -986,7 +987,7 @@ static int qemu_rdma_poll(RDMAContext *rdma)
     if (rdma->control_ready_expected &&
         (wc.wr_id >= RDMA_WRID_RECV_CONTROL)) {
         DDDPRINTF("completion %s #%" PRId64 " received (%" PRId64 ")"
-                  " left %d\n", wrid_desc[RDMA_WRID_RECV_CONTROL], 
+                  " left %d\n", wrid_desc[RDMA_WRID_RECV_CONTROL],
                   wc.wr_id - RDMA_WRID_RECV_CONTROL, wc.wr_id,
                   rdma->num_signaled_send);
         rdma->control_ready_expected = 0;
@@ -1023,7 +1024,8 @@ static int qemu_rdma_poll(RDMAContext *rdma)
  * completions only need to be recorded, but do not actually
  * need further processing.
  */
-static int qemu_rdma_block_for_wrid(RDMAContext *rdma, int wrid_start, int wrid_stop)
+static int qemu_rdma_block_for_wrid(RDMAContext *rdma, int wrid_start,
+                                    int wrid_stop)
 {
     int num_cq_events = 0;
     int r = RDMA_WRID_NONE;
@@ -1042,9 +1044,11 @@ static int qemu_rdma_block_for_wrid(RDMAContext *rdma, int wrid_start, int wrid_
         if (r == RDMA_WRID_NONE) {
             break;
         }
-        if ((r < wrid_start) || ((wrid_stop != -1) && (r > wrid_stop))) {
+        if ((r < wrid_start) || ((wrid_stop != -1)
+                                && (r > wrid_stop))) {
             DDDPRINTF("A Wanted wrid %s (%d, %d) but got %s (%d)\n",
-                print_wrid(wrid_start), wrid_start, wrid_stop, print_wrid(r), r);
+                print_wrid(wrid_start),
+                        wrid_start, wrid_stop, print_wrid(r), r);
         }
     }
 
@@ -1082,7 +1086,8 @@ static int qemu_rdma_block_for_wrid(RDMAContext *rdma, int wrid_start, int wrid_
             }
             if ((r < wrid_start) || ((wrid_stop != -1) && (r > wrid_stop))) {
                 DDDPRINTF("B Wanted wrid %s (%d, %d) but got %s (%d)\n",
-                    print_wrid(wrid_start), wrid_start, wrid_stop, print_wrid(r), r);
+                    print_wrid(wrid_start), wrid_start,
+                                        wrid_stop, print_wrid(r), r);
             }
         }
 
@@ -1406,18 +1411,19 @@ static int qemu_rdma_write_one(QEMUFile *f, RDMAContext *rdma,
         int len = rdma->in_transit[x].len;
         uintptr_t start = rdma->in_transit[x].addr, end = start + len;
 
-        if(!start && !len)
+        if (!start && !len) {
             continue;
+        }
 
         if ((sge.addr >= start) && (sge.addr < end)) {
-            DPRINTF("Not clobbering: start %" PRIu64 " end %" PRIu64 
+            DPRINTF("Not clobbering: start %" PRIu64 " end %" PRIu64
                     " len %d current %" PRIu64 " len %" PRIu64 " wrid %d\n",
                     start, end, len, sge.addr, length, x);
 
             ret = qemu_rdma_block_for_wrid(rdma, x, -1);
             if (ret < 0) {
                 fprintf(stderr, "Failed to Wait for previous write to complete "
-                        "start %" PRIu64 " end %" PRIu64 
+                        "start %" PRIu64 " end %" PRIu64
                         " len %d current %" PRIu64 " len %" PRIu64 " wrid %d\n",
                         start, end, len, sge.addr, length, x);
                 return ret;
@@ -1524,9 +1530,9 @@ static int qemu_rdma_write_one(QEMUFile *f, RDMAContext *rdma,
      */
     send_wr.wr_id = RDMA_WRID_RDMA_WRITE_START + rdma->nb_transit;
 
-    if(rdma->in_transit[rdma->nb_transit].addr != 0 &&
+    if (rdma->in_transit[rdma->nb_transit].addr != 0 &&
         rdma->in_transit[rdma->nb_transit].len != 0) {
-        DDPRINTF("no slots left! make more %d %" PRIu64 "\n", 
+        DDPRINTF("no slots left! make more %d %" PRIu64 "\n",
                     rdma->nb_transit, send_wr.wr_id);
 
         ret = qemu_rdma_block_for_wrid(rdma, send_wr.wr_id, -1);
@@ -1590,7 +1596,7 @@ retry:
     if (ret < 0) {
         if (ret == -ENOMEM) {
             DDPRINTF("send queue is full. wait a little....\n");
-            ret = qemu_rdma_block_for_wrid(rdma, RDMA_WRID_RDMA_WRITE_START, 
+            ret = qemu_rdma_block_for_wrid(rdma, RDMA_WRID_RDMA_WRITE_START,
                                        RDMA_WRID_RDMA_WRITE_STOP);
             if (ret >= 0) {
                 goto retry;
@@ -2234,7 +2240,7 @@ static int qemu_rdma_drain_cq(QEMUFile *f, RDMAContext *rdma)
     }
 
     while (rdma->num_signaled_send) {
-        ret = qemu_rdma_block_for_wrid(rdma, RDMA_WRID_RDMA_WRITE_START, 
+        ret = qemu_rdma_block_for_wrid(rdma, RDMA_WRID_RDMA_WRITE_START,
                                        RDMA_WRID_RDMA_WRITE_STOP);
         if (ret < 0) {
             fprintf(stderr, "rdma migration: complete polling error!\n");
@@ -2258,7 +2264,8 @@ static int qemu_rdma_close(void *opaque)
 }
 
 static size_t qemu_rdma_save_page(QEMUFile *f, void *opaque,
-                   ram_addr_t block_offset, ram_addr_t offset, size_t size)
+                                  ram_addr_t block_offset, ram_addr_t offset,
+                                  size_t size, int *bytes_sent)
 {
     ram_addr_t current_addr = block_offset + offset;
     QEMUFileRDMA *rfile = opaque;
@@ -2308,6 +2315,7 @@ static size_t qemu_rdma_save_page(QEMUFile *f, void *opaque,
      * So, we have to call qemu_update_position() later on when the actual write
      * occurs.
      */
+    *bytes_sent = 1;
     return RAM_SAVE_CONTROL_DELAYED;
 }
 
