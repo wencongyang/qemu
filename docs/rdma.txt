@@ -76,6 +76,13 @@ of the migration, which can greatly reduce the "total" time of your migration.
 Example performance of this using an idle VM in the previous example
 can be found in the "Performance" section.
 
+Note: for very large virtual machines (hundreds of GBs), pinning all 
+*all* of the memory of your virtual machine in the kernel is very expensive 
+may extend the initial bulk iteration time by many seconds,
+and thus extending the total migration time. However, this will not
+affect the determinism or predictability of your migration you will
+still gain from the benefits of advanced pinning with RDMA.
+
 RUNNING:
 ========
 
@@ -195,22 +202,26 @@ The maximum number of repeats is hard-coded to 4096. This is a conservative
 limit based on the maximum size of a SEND message along with emperical
 observations on the maximum future benefit of simultaneous page registrations.
 
-The 'type' field has 9 different command values:
+The 'type' field has 10 different command values:
     1. Unused
-    2. Error             (sent to the source during bad things)
-    3. Ready             (control-channel is available)
-    4. QEMU File         (for sending non-live device state)
-    5. RAM Blocks        (used right after connection setup)
-    6. Compress page     (zap zero page and skip registration)
-    7. Register request  (dynamic chunk registration)
-    8. Register result   ('rkey' to be used by sender)
-    9. Register finished (registration for current iteration finished)
+    2. Error              (sent to the source during bad things)
+    3. Ready              (control-channel is available)
+    4. QEMU File          (for sending non-live device state)
+    5. RAM Blocks request (used right after connection setup)
+    6. RAM Blocks result  (used right after connection setup)
+    7. Compress page      (zap zero page and skip registration)
+    8. Register request   (dynamic chunk registration)
+    9. Register result    ('rkey' to be used by sender)
+    10. Register finished  (registration for current iteration finished)
 
 A single control message, as hinted above, can contain within the data
 portion an array of many commands of the same type. If there is more than
 one command, then the 'repeat' field will be greater than 1.
 
-After connection setup is completed, we have two protocol-level
+After connection setup, message 5 & 6 are used to exchange ram block
+information and optionally pin all the memory if requested by the user.
+
+After ram block exchange is completed, we have two protocol-level
 functions, responsible for communicating control-channel commands
 using the above list of values:
 

@@ -406,6 +406,12 @@ static int curl_open(BlockDriverState *bs, QDict *options, int flags)
 
     static int inited = 0;
 
+    if (flags & BDRV_O_RDWR) {
+        qerror_report(ERROR_CLASS_GENERIC_ERROR,
+                      "curl block device does not support writes");
+        return -EROFS;
+    }
+
     opts = qemu_opts_create_nofail(&runtime_opts);
     qemu_opts_absorb_qdict(opts, options, &local_err);
     if (error_is_set(&local_err)) {
@@ -446,8 +452,6 @@ static int curl_open(BlockDriverState *bs, QDict *options, int flags)
     if (curl_easy_perform(state->curl))
         goto out;
     curl_easy_getinfo(state->curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &d);
-    curl_easy_setopt(state->curl, CURLOPT_WRITEFUNCTION, (void *)curl_read_cb);
-    curl_easy_setopt(state->curl, CURLOPT_NOBODY, 0);
     if (d)
         s->len = (size_t)d;
     else if(!s->len)
@@ -462,8 +466,8 @@ static int curl_open(BlockDriverState *bs, QDict *options, int flags)
     // initialize the multi interface!
 
     s->multi = curl_multi_init();
-    curl_multi_setopt( s->multi, CURLMOPT_SOCKETDATA, s); 
-    curl_multi_setopt( s->multi, CURLMOPT_SOCKETFUNCTION, curl_sock_cb ); 
+    curl_multi_setopt(s->multi, CURLMOPT_SOCKETDATA, s);
+    curl_multi_setopt(s->multi, CURLMOPT_SOCKETFUNCTION, curl_sock_cb);
     curl_multi_do(s);
 
     qemu_opts_del(opts);

@@ -377,7 +377,11 @@ static void gd_cursor_define(DisplayChangeListener *dcl,
                                         pixbuf, c->hot_x, c->hot_y);
     gdk_window_set_cursor(gtk_widget_get_window(s->drawing_area), cursor);
     g_object_unref(pixbuf);
+#if !GTK_CHECK_VERSION(3, 0, 0)
     gdk_cursor_unref(cursor);
+#else
+    g_object_unref(cursor);
+#endif
 }
 
 static void gd_switch(DisplayChangeListener *dcl,
@@ -1119,6 +1123,8 @@ static CharDriverState *gd_vc_handler(ChardevVC *unused)
 
     chr = g_malloc0(sizeof(*chr));
     chr->chr_write = gd_vc_chr_write;
+    /* defer OPENED events until our vc is fully initialized */
+    chr->explicit_be_open = true;
 
     vcs[nb_vcs++] = chr;
 
@@ -1158,8 +1164,7 @@ static GSList *gd_vc_init(GtkDisplayState *s, VirtualConsole *vc, int index, GSL
     GIOChannel *chan;
     GtkWidget *scrolled_window;
     GtkAdjustment *vadjustment;
-    int master_fd, slave_fd, ret;
-    struct termios tty;
+    int master_fd, slave_fd;
 
     snprintf(buffer, sizeof(buffer), "vc%d", index);
     snprintf(path, sizeof(path), "<QEMU>/View/VC%d", index);
@@ -1179,13 +1184,8 @@ static GSList *gd_vc_init(GtkDisplayState *s, VirtualConsole *vc, int index, GSL
 
     vc->terminal = vte_terminal_new();
 
-    ret = openpty(&master_fd, &slave_fd, NULL, NULL, NULL);
-    g_assert(ret != -1);
-
-    /* Set raw attributes on the pty. */
-    tcgetattr(slave_fd, &tty);
-    cfmakeraw(&tty);
-    tcsetattr(slave_fd, TCSAFLUSH, &tty);
+    master_fd = qemu_openpty_raw(&slave_fd, NULL);
+    g_assert(master_fd != -1);
 
 #if VTE_CHECK_VERSION(0, 26, 0)
     pty = vte_pty_new_foreign(master_fd, NULL);
@@ -1433,7 +1433,7 @@ static const DisplayChangeListenerOps dcl_ops = {
     .dpy_cursor_define = gd_cursor_define,
 };
 
-void gtk_display_init(DisplayState *ds)
+void gtk_display_init(DisplayState *ds, bool full_screen)
 {
     GtkDisplayState *s = g_malloc0(sizeof(*s));
     char *filename;
@@ -1469,7 +1469,7 @@ void gtk_display_init(DisplayState *ds)
 
     gtk_notebook_append_page(GTK_NOTEBOOK(s->notebook), s->drawing_area, gtk_label_new("VGA"));
 
-    filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, "qemu-icon.bmp");
+    filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, "qemu_logo_no_text.svg");
     if (filename) {
         GError *error = NULL;
         GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file(filename, &error);
@@ -1508,6 +1508,10 @@ void gtk_display_init(DisplayState *ds)
     gtk_container_add(GTK_CONTAINER(s->window), s->vbox);
 
     gtk_widget_show_all(s->window);
+
+    if (full_screen) {
+        gtk_menu_item_activate(GTK_MENU_ITEM(s->full_screen_item));
+    }
 
     register_displaychangelistener(&s->dcl);
 

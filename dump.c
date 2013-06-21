@@ -21,6 +21,7 @@
 #include "sysemu/dump.h"
 #include "sysemu/sysemu.h"
 #include "sysemu/memory_mapping.h"
+#include "sysemu/cpus.h"
 #include "qapi/error.h"
 #include "qmp-commands.h"
 
@@ -706,6 +707,7 @@ static int dump_init(DumpState *s, int fd, bool paging, bool has_filter,
 {
     CPUArchState *env;
     int nr_cpus;
+    Error *err = NULL;
     int ret;
 
     if (runstate_is_running()) {
@@ -731,12 +733,12 @@ static int dump_init(DumpState *s, int fd, bool paging, bool has_filter,
      * If the target architecture is not supported, cpu_get_dump_info() will
      * return -1.
      *
-     * if we use kvm, we should synchronize the register before we get dump
+     * If we use KVM, we should synchronize the registers before we get dump
      * info.
      */
+    cpu_synchronize_all_states();
     nr_cpus = 0;
     for (env = first_cpu; env != NULL; env = env->next_cpu) {
-        cpu_synchronize_state(env);
         nr_cpus++;
     }
 
@@ -756,7 +758,11 @@ static int dump_init(DumpState *s, int fd, bool paging, bool has_filter,
     /* get memory mapping */
     memory_mapping_list_init(&s->list);
     if (paging) {
-        qemu_get_guest_memory_mapping(&s->list);
+        qemu_get_guest_memory_mapping(&s->list, &err);
+        if (err != NULL) {
+            error_propagate(errp, err);
+            goto cleanup;
+        }
     } else {
         qemu_get_guest_simple_memory_mapping(&s->list);
     }
@@ -847,7 +853,7 @@ void qmp_dump_guest_memory(bool paging, const char *file, bool has_begin,
     if  (strstart(file, "file:", &p)) {
         fd = qemu_open(p, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, S_IRUSR);
         if (fd < 0) {
-            error_set(errp, QERR_OPEN_FILE_FAILED, p);
+            error_setg_file_open(errp, errno, p);
             return;
         }
     }
