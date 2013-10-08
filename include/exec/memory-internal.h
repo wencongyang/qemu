@@ -87,10 +87,10 @@ static inline void cpu_physical_memory_set_dirty(ram_addr_t addr)
     cpu_physical_memory_set_dirty_flag(addr, CODE_DIRTY_FLAG);
 }
 
-static inline int cpu_physical_memory_clear_dirty_flags(ram_addr_t addr,
-                                                        int dirty_flags)
+static inline int cpu_physical_memory_clear_dirty_flag(ram_addr_t addr,
+                                                       int dirty_flag)
 {
-    int mask = ~dirty_flags;
+    int mask = ~dirty_flag;
 
     return ram_list.phys_dirty[addr >> TARGET_PAGE_BITS] &= mask;
 }
@@ -110,19 +110,19 @@ static inline void cpu_physical_memory_set_dirty_range(ram_addr_t start,
 
 static inline void cpu_physical_memory_mask_dirty_range(ram_addr_t start,
                                                         ram_addr_t length,
-                                                        int dirty_flags)
+                                                        int dirty_flag)
 {
     ram_addr_t addr, end;
 
     end = TARGET_PAGE_ALIGN(start + length);
     start &= TARGET_PAGE_MASK;
     for (addr = start; addr < end; addr += TARGET_PAGE_SIZE) {
-        cpu_physical_memory_clear_dirty_flags(addr, dirty_flags);
+        cpu_physical_memory_clear_dirty_flag(addr, dirty_flag);
     }
 }
 
 void cpu_physical_memory_reset_dirty(ram_addr_t start, ram_addr_t end,
-                                     int dirty_flags);
+                                     int dirty_flag);
 
 #endif
 

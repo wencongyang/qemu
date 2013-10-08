@@ -662,7 +662,7 @@ static void tlb_reset_dirty_range_all(ram_addr_t start, ram_addr_t end,
 
 /* Note: start and end must be within the same ram block.  */
 void cpu_physical_memory_reset_dirty(ram_addr_t start, ram_addr_t end,
-                                     int dirty_flags)
+                                     int dirty_flag)
 {
     uintptr_t length;
 
@@ -672,7 +672,7 @@ void cpu_physical_memory_reset_dirty(ram_addr_t start, ram_addr_t end,
     length = end - start;
     if (length == 0)
         return;
-    cpu_physical_memory_mask_dirty_range(start, length, dirty_flags);
+    cpu_physical_memory_mask_dirty_range(start, length, dirty_flag);
 
     if (tcg_enabled()) {
         tlb_reset_dirty_range_all(start, end, length);
