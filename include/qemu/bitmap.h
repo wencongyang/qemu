@@ -219,4 +219,13 @@ unsigned long bitmap_find_next_zero_area(unsigned long *map,
 					 unsigned int nr,
 					 unsigned long align_mask);
 
+static inline unsigned long *bitmap_zero_extend(unsigned long *old,
+                                                int old_nbits, int new_nbits)
+{
+    int new_len = BITS_TO_LONGS(new_nbits) * sizeof(unsigned long);
+    unsigned long *new = g_realloc(old, new_len);
+    bitmap_clear(new, old_nbits, new_nbits - old_nbits);
+    return new;
+}
+
 #endif /* BITMAP_H */
