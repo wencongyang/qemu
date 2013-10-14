@@ -50,6 +50,7 @@
 #include "translate-all.h"
 
 #include "exec/memory-internal.h"
+#include "exec/memory-physical.h"
 
 //#define DEBUG_SUBPAGE
 

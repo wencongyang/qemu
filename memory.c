@@ -22,6 +22,7 @@
 #include <assert.h>
 
 #include "exec/memory-internal.h"
+#include "exec/memory-physical.h"
 
 //#define DEBUG_UNASSIGNED
 

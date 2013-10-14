@@ -26,6 +26,7 @@
 #include "exec/cputlb.h"
 
 #include "exec/memory-internal.h"
+#include "exec/memory-physical.h"
 
 //#define DEBUG_TLB
 //#define DEBUG_TLB_CHECK
