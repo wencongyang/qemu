@@ -36,15 +36,6 @@
     do { } while (0)
 #endif
 
-enum {
-    MIG_STATE_ERROR = -1,
-    MIG_STATE_NONE,
-    MIG_STATE_SETUP,
-    MIG_STATE_CANCELLED,
-    MIG_STATE_ACTIVE,
-    MIG_STATE_COMPLETED,
-};
-
 #define MAX_THROTTLE  (32 << 20)      /* Migration speed throttling */
 
 /* Amount of time to allocate to each "chunk" of bandwidth-throttled
@@ -270,7 +261,7 @@ void qmp_migrate_set_capabilities(MigrationCapabilityStatusList *params,
     MigrationState *s = migrate_get_current();
     MigrationCapabilityStatusList *cap;
 
-    if (s->state == MIG_STATE_ACTIVE || s->state == MIG_STATE_SETUP) {
+    if (migration_is_active(s)) {
         error_set(errp, QERR_MIGRATION_ACTIVE);
         return;
     }
@@ -281,6 +272,17 @@ void qmp_migrate_set_capabilities(MigrationCapabilityStatusList *params,
 }
 
 /* shared migration helpers */
+
+bool migration_is_mc(MigrationState *s)
+{
+    return s->state == MIG_STATE_MC;
+}
+
+bool migration_is_active(MigrationState *s)
+{
+    return (s->state == MIG_STATE_ACTIVE) || migration_in_setup(s)
+            || migration_is_mc(s);
+}
 
 static void migrate_fd_cleanup(void *opaque)
 {
@@ -299,7 +301,7 @@ static void migrate_fd_cleanup(void *opaque)
         s->file = NULL;
     }
 
-    assert(s->state != MIG_STATE_ACTIVE);
+    assert(!migration_is_active(s));
 
     if (s->state != MIG_STATE_COMPLETED) {
         qemu_savevm_state_cancel();
@@ -308,7 +310,7 @@ static void migrate_fd_cleanup(void *opaque)
     notifier_list_notify(&migration_state_notifiers, s);
 }
 
-static void migrate_set_state(MigrationState *s, int old_state, int new_state)
+void migrate_set_state(MigrationState *s, int old_state, int new_state)
 {
     if (atomic_cmpxchg(&s->state, old_state, new_state) == new_state) {
         trace_migrate_set_state(new_state);
@@ -405,7 +407,7 @@ void qmp_migrate(const char *uri, bool has_blk, bool blk,
     params.blk = has_blk && blk;
     params.shared = has_inc && inc;
 
-    if (s->state == MIG_STATE_ACTIVE || s->state == MIG_STATE_SETUP) {
+    if (migration_is_active(s)) {
         error_set(errp, QERR_MIGRATION_ACTIVE);
         return;
     }
@@ -594,7 +596,10 @@ static void *migration_thread(void *opaque)
                 }
 
                 if (!qemu_file_get_error(s->file)) {
-                    migrate_set_state(s, MIG_STATE_ACTIVE, MIG_STATE_COMPLETED);
+                    if (!migrate_use_mc()) {
+                        migrate_set_state(s,
+                            MIG_STATE_ACTIVE, MIG_STATE_COMPLETED);
+                    }
                     break;
                 }
             }

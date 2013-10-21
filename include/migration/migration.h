@@ -95,6 +95,8 @@ int migrate_fd_close(MigrationState *s);
 void add_migration_state_change_notifier(Notifier *notify);
 void remove_migration_state_change_notifier(Notifier *notify);
 bool migration_in_setup(MigrationState *);
+bool migration_is_active(MigrationState *);
+bool migration_is_mc(MigrationState *s);
 bool migration_has_finished(MigrationState *);
 bool migration_has_failed(MigrationState *);
 MigrationState *migrate_get_current(void);
@@ -126,6 +128,15 @@ void migration_bitmap_worker_start(MigrationState *s);
 void migration_bitmap_worker_stop(MigrationState *s);
 void migrate_set_state(MigrationState *s, int old_state, int new_state);
 
+enum {
+    MIG_STATE_ERROR = -1,
+    MIG_STATE_NONE,
+    MIG_STATE_SETUP,
+    MIG_STATE_CANCELLED,
+    MIG_STATE_ACTIVE,
+    MIG_STATE_MC,
+    MIG_STATE_COMPLETED,
+};
 void ram_handle_compressed(void *host, uint8_t ch, uint64_t size);
 
 /**
@@ -194,4 +205,12 @@ int ram_control_copy_page(QEMUFile *f,
                              ram_addr_t block_offset_source,
                              ram_addr_t offset_source,
                              long size);
+
+int migrate_use_mc(void);
+int migrate_use_mc_rdma_copy(void);
+
+#define MC_VERSION 1
+
+void qemu_rdma_info_save(QEMUFile *f, void *opaque);
+int qemu_rdma_info_load(QEMUFile *f, void *opaque, int version_id);
 #endif

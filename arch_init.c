@@ -795,13 +795,13 @@ static void ram_migration_cancel(void *opaque)
     migration_end();
 }
 
-static void reset_ram_globals(void)
+static void reset_ram_globals(bool reset_bulk_stage)
 {
     last_seen_block = NULL;
     last_sent_block = NULL;
     last_offset = 0;
     last_version = ram_list.version;
-    ram_bulk_stage = true;
+    ram_bulk_stage = reset_bulk_stage;
 }
 
 #define MAX_WAIT 50 /* ms, half buffered_file limit */
@@ -810,6 +810,15 @@ static int ram_save_setup(QEMUFile *f, void *opaque)
 {
     RAMBlock *block;
     int64_t ram_pages = last_ram_offset() >> TARGET_PAGE_BITS;
+
+    /*
+     * RAM stays open during micro-checkpointing for the next transaction.
+     */
+    if (migration_is_mc(migrate_get_current())) {
+        qemu_mutex_lock_ramlist();
+        reset_ram_globals(false);
+        goto skip_setup;
+    }
 
     migration_bitmap = bitmap_new(ram_pages);
     bitmap_set(migration_bitmap, 0, ram_pages);
@@ -833,11 +842,13 @@ static int ram_save_setup(QEMUFile *f, void *opaque)
     qemu_mutex_lock_iothread();
     qemu_mutex_lock_ramlist();
     bytes_transferred = 0;
-    reset_ram_globals();
+    reset_ram_globals(true);
 
     memory_global_dirty_log_start();
     migration_bitmap_sync();
     qemu_mutex_unlock_iothread();
+
+skip_setup:
 
     qemu_put_be64(f, ram_bytes_total() | RAM_SAVE_FLAG_MEM_SIZE);
 
@@ -867,7 +878,7 @@ static int ram_save_iterate(QEMUFile *f, void *opaque)
     qemu_mutex_lock_ramlist();
 
     if (ram_list.version != last_version) {
-        reset_ram_globals();
+        reset_ram_globals(true);
     }
 
     ram_control_before_iterate(f, RAM_CONTROL_ROUND);
@@ -948,7 +959,15 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
     }
 
     ram_control_after_iterate(f, RAM_CONTROL_FINISH);
-    migration_end();
+
+    /*
+     * Only cleanup at the end of normal migrations
+     * or if the MC destination failed and we got an error.
+     * Otherwise, we are (or will be soon) in MIG_STATE_MC.
+     */
+    if(!migrate_use_mc() || migration_has_failed(migrate_get_current())) {
+        migration_end();
+    }
 
     qemu_mutex_unlock_ramlist();
     qemu_put_be64(f, RAM_SAVE_FLAG_EOS);

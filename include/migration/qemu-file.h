@@ -71,6 +71,7 @@ typedef int (QEMURamHookFunc)(QEMUFile *f, void *opaque, uint64_t flags);
 #define RAM_CONTROL_ROUND    1
 #define RAM_CONTROL_HOOK     2
 #define RAM_CONTROL_FINISH   3
+#define RAM_CONTROL_FLUSH    4
 
 /*
  * This function allows override of where the RAM page
