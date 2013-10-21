@@ -92,6 +92,41 @@ typedef int (QEMURamLoadFunc)(QEMUFile *f,
                                void *host_addr,
                                long size);
 
+/*
+ * This function allows *local* RDMA copying memory between two registered
+ * RAMBlocks, both real ones as well as private memory areas independently
+ * registered by external callers (such as MC). If RDMA is not available,
+ * then this function does nothing and the caller should just use memcpy().
+ */
+typedef int (QEMURamCopyFunc)(QEMUFile *f, void *opaque,
+                               ram_addr_t block_offset_dest,
+                               ram_addr_t offset_dest,
+                               ram_addr_t block_offset_source,
+                               ram_addr_t offset_source,
+                               long size);
+
+/* 
+ * Inform the underlying transport of a new virtual memory area.
+ * If this area is an actual RAMBlock, then pass the corresponding
+ * parameters of that block.
+ * If this area is an arbitrary virtual memory address, then
+ * pass the same value for both @host_addr and @block_offset.
+ */
+typedef int (QEMURamAddFunc)(QEMUFile *f, void *opaque,
+                               void *host_addr,
+                               ram_addr_t block_offset,
+                               uint64_t length);
+
+/* 
+ * Remove an underlying new virtual memory area.
+ * If this area is an actual RAMBlock, then pass the corresponding
+ * parameters of that block.
+ * If this area is an arbitrary virtual memory address, then
+ * pass the same value for both @host_addr and @block_offset.
+ */
+typedef int (QEMURamRemoveFunc)(QEMUFile *f, void *opaque,
+                               ram_addr_t block_offset);
+
 typedef struct QEMUFileOps {
     QEMUFilePutBufferFunc *put_buffer;
     QEMUFileGetBufferFunc *get_buffer;
@@ -103,6 +138,9 @@ typedef struct QEMUFileOps {
     QEMURamHookFunc *hook_ram_load;
     QEMURamSaveFunc *save_page;
     QEMURamLoadFunc *load_page;
+    QEMURamCopyFunc *copy_page;
+    QEMURamAddFunc *add;
+    QEMURamRemoveFunc *remove;
 } QEMUFileOps;
 
 QEMUFile *qemu_fopen_ops(void *opaque, const QEMUFileOps *ops);

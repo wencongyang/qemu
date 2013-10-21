@@ -159,6 +159,9 @@ int64_t xbzrle_cache_resize(int64_t new_size);
 void ram_control_before_iterate(QEMUFile *f, uint64_t flags);
 void ram_control_after_iterate(QEMUFile *f, uint64_t flags);
 void ram_control_load_hook(QEMUFile *f, uint64_t flags);
+void ram_control_add(QEMUFile *f, void *host_addr,
+                         ram_addr_t block_offset, uint64_t length);
+void ram_control_remove(QEMUFile *f, ram_addr_t block_offset);
 
 /* Whenever this is found in the data stream, the flags
  * will be passed to ram_control_load_hook in the incoming-migration
@@ -171,6 +174,8 @@ void ram_control_load_hook(QEMUFile *f, uint64_t flags);
 #define RAM_SAVE_CONTROL_DELAYED  -2000
 #define RAM_LOAD_CONTROL_NOT_SUPP -3000
 #define RAM_LOAD_CONTROL_DELAYED  -4000
+#define RAM_COPY_CONTROL_NOT_SUPP -5000
+#define RAM_COPY_CONTROL_DELAYED  -6000
 
 #define RDMA_CONTROL_VERSION_CURRENT 1
 
@@ -181,5 +186,12 @@ int ram_control_save_page(QEMUFile *f, ram_addr_t block_offset,
 
 int ram_control_load_page(QEMUFile *f,
                              void *host_addr,
+                             long size);
+
+int ram_control_copy_page(QEMUFile *f, 
+                             ram_addr_t block_offset_dest,
+                             ram_addr_t offset_dest,
+                             ram_addr_t block_offset_source,
+                             ram_addr_t offset_source,
                              long size);
 #endif
