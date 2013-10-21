@@ -182,6 +182,7 @@ kvm="no"
 rdma=""
 gprof="no"
 debug_tcg="no"
+mc=""
 debug="no"
 strip_opt="yes"
 tcg_interpreter="no"
@@ -969,6 +970,10 @@ for opt do
   ;;
   --enable-libssh2) libssh2="yes"
   ;;
+  --disable-mc) mc="no"
+  ;;
+  --enable-mc) mc="yes"
+  ;;
   *) echo "ERROR: unknown option $opt"; show_help="yes"
   ;;
   esac
@@ -1200,6 +1205,8 @@ echo "  --gcov=GCOV              use specified gcov [$gcov_tool]"
 echo "  --enable-tpm             enable TPM support"
 echo "  --disable-libssh2        disable ssh block device support"
 echo "  --enable-libssh2         enable ssh block device support"
+echo "  --disable-mc             disable Micro-Checkpointing support"
+echo "  --enable-mc              enable Micro-Checkpointing support"
 echo ""
 echo "NOTE: The object files are built at the place where configure is launched"
 exit 1
@@ -1860,6 +1867,35 @@ EOF
     rdma="no"
   fi
 fi
+
+##################################################
+# Micro-Checkpointing requires netlink
+if test "$mc" != "no" ; then
+  cat > $TMPC <<EOF
+#include <libnl3/netlink/route/qdisc/plug.h>
+#include <libnl3/netlink/route/class.h>
+#include <libnl3/netlink/cli/utils.h>
+#include <libnl3/netlink/cli/tc.h>
+#include <libnl3/netlink/cli/qdisc.h>
+#include <libnl3/netlink/cli/link.h>
+int main(void) { return 0; }
+EOF
+  mc_libs="-lnl-3 -lnl-cli-3 -lnl-route-3"
+  mc_cflags="-I/usr/include/libnl3"
+  if compile_prog "$mc_cflags" "$mc_libs" ; then
+    mc="yes"
+    libs_softmmu="$libs_softmmu $mc_libs"
+    QEMU_CFLAGS="$QEMU_CFLAGS $mc_cflags"
+  else
+    if test "$mc" = "yes" ; then
+        error_exit \
+            " NetLink v3 libs/headers not present." \
+            " Please install the libnl3-*-dev(el) packages from your distro."
+    fi
+    mc="no"
+  fi
+fi
+
 
 ##########################################
 # VNC TLS/WS detection
@@ -3723,6 +3759,7 @@ echo "KVM support       $kvm"
 echo "RDMA support      $rdma"
 echo "TCG interpreter   $tcg_interpreter"
 echo "fdt support       $fdt"
+echo "Micro checkpointing $mc"
 echo "preadv support    $preadv"
 echo "fdatasync         $fdatasync"
 echo "madvise           $madvise"
@@ -4206,6 +4243,10 @@ if test "$rdma" = "yes" ; then
   echo "CONFIG_RDMA=y" >> $config_host_mak
 fi
 
+if test "$mc" = "yes" ; then
+  echo "CONFIG_MC=y" >> $config_host_mak
+fi
+
 if test "$tcg_interpreter" = "yes"; then
   QEMU_INCLUDES="-I\$(SRC_PATH)/tcg/tci $QEMU_INCLUDES"
 elif test "$ARCH" = "sparc64" ; then
@@ -4632,6 +4673,10 @@ echo "LDFLAGS+=$ldflags" >> $config_target_mak
 echo "QEMU_CFLAGS+=$cflags" >> $config_target_mak
 
 done # for target in $targets
+
+if test "$mc" = "yes" ; then
+echo "CONFIG_MC=y" >> $config_host_mak
+fi
 
 if [ "$pixman" = "internal" ]; then
   echo "config-host.h: subdir-pixman" >> $config_host_mak
