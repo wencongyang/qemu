@@ -189,6 +189,8 @@ typedef struct AccountingInfo {
     uint64_t skipped_pages;
     uint64_t norm_pages;
     uint64_t iterations;
+    uint64_t log_dirty_time;
+    uint64_t migration_bitmap_time;
     uint64_t xbzrle_bytes;
     uint64_t xbzrle_pages;
     uint64_t xbzrle_cache_miss;
@@ -230,6 +232,16 @@ uint64_t norm_mig_bytes_transferred(void)
 uint64_t norm_mig_pages_transferred(void)
 {
     return acct_info.norm_pages;
+}
+
+uint64_t norm_mig_log_dirty_time(void)
+{
+    return acct_info.log_dirty_time;
+}
+
+uint64_t norm_mig_bitmap_time(void)
+{
+    return acct_info.migration_bitmap_time;
 }
 
 uint64_t xbzrle_mig_bytes_transferred(void)
@@ -362,15 +374,189 @@ ram_addr_t migration_bitmap_find_and_reset_dirty(MemoryRegion *mr,
 static inline bool migration_bitmap_set_dirty(MemoryRegion *mr,
                                               ram_addr_t offset)
 {
-    bool ret;
-    int nr = (mr->ram_addr + offset) >> TARGET_PAGE_BITS;
+    return test_and_set_bit((mr->ram_addr + offset) >> TARGET_PAGE_BITS, 
+                                migration_bitmap);
+}
 
-    ret = test_and_set_bit(nr, migration_bitmap);
+typedef struct BitmapWalkerParams {
+    QemuMutex ready_mutex;
+    QemuMutex done_mutex;
+    QemuCond cond;
+    QemuThread walker;
+    MigrationState *s;
+    int core_id;
+    int keep_running;
+    ram_addr_t start;
+    ram_addr_t stop;
+    void *block;
+    uint64_t dirty_pages;
+} BitmapWalkerParams;
 
-    if (!ret) {
-        migration_dirty_pages++;
+static int nb_bitmap_workers = 0;
+
+BitmapWalkerParams *bitmap_walkers = NULL;
+
+/*
+ * Bitmap workers: This is a temporary performance-driven
+ * workaround for the slowness (10s of milliseconds) incurred
+ * during calls to migration_bitmap_sync().
+ *
+ * Ideally, migration_bitmap_sync() should be able to use the
+ * GET_LOG_DIRTY bitmap from KVM directly, but it does not right
+ * now because the bitmap is not retrieved as a single memory
+ * allocation which requires a couple of transformations into
+ * a 'unified' bitmap before the migration code can make good use
+ * of it.
+ *
+ * Bitmap workers perform this transformation in parallel
+ * in a multi-threaded fashion until a patch is ready to process
+ * the bitmaps from GET_LOG_DIRTY directly.
+ */
+static uint64_t migration_bitmap_sync_range(RAMBlock *block, 
+                            ram_addr_t start, ram_addr_t stop)
+{
+    ram_addr_t addr;
+    uint64_t dirty_pages = 0;
+    
+
+    for (addr = start; addr < stop; addr += TARGET_PAGE_SIZE) {
+        if (memory_region_test_and_clear_dirty(block->mr,
+                                               addr, TARGET_PAGE_SIZE,
+                                               DIRTY_MEMORY_MIGRATION)) {
+            if (!migration_bitmap_set_dirty(block->mr, addr)) {
+                dirty_pages++;
+            }
+        }
     }
-    return ret;
+
+    return dirty_pages;
+}
+
+/*
+ * The worker sleeps until it gets some work to transform a 
+ * chunk of bitmap from KVM to the migration_bitmap.
+ */
+void *migration_bitmap_worker(void *opaque)
+{
+    BitmapWalkerParams * bwp = opaque;
+
+    do {
+        qemu_mutex_lock(&bwp->ready_mutex);
+        qemu_mutex_lock(&bwp->done_mutex);
+        qemu_mutex_unlock(&bwp->ready_mutex);
+        qemu_cond_signal(&bwp->cond);
+
+        if(!bwp->keep_running) {
+                break;
+        }
+
+        bwp->dirty_pages = migration_bitmap_sync_range(bwp->block, bwp->start, bwp->stop);
+
+        qemu_cond_wait(&bwp->cond, &bwp->done_mutex);
+        qemu_mutex_unlock(&bwp->done_mutex);
+    } while(bwp->keep_running);
+
+    return NULL;
+}
+
+void migration_bitmap_worker_start(MigrationState *s)
+{
+    int core;
+
+    /* 
+     * CPUs N - 1 are reserved for N - 1 worker threads 
+     * processing the pc.ram bytemap => migration_bitmap.
+     * The migration thread goes on the last CPU,
+     * which process the remaining, smaller RAMblocks.
+     */
+    nb_bitmap_workers = getNumCores() - 1;
+
+    bitmap_walkers = g_malloc0(sizeof(struct BitmapWalkerParams) * 
+                                                nb_bitmap_workers);
+
+    memset(bitmap_walkers, 0, sizeof(BitmapWalkerParams) * nb_bitmap_workers);
+
+    for (core = 0; core < nb_bitmap_workers; core++) {
+        BitmapWalkerParams * bwp = &bitmap_walkers[core];
+        bwp->core_id = core;
+        bwp->keep_running = 1;
+        bwp->s = s;
+        qemu_cond_init(&bwp->cond);
+        qemu_mutex_init(&bwp->ready_mutex);
+        qemu_mutex_init(&bwp->done_mutex);
+        qemu_mutex_lock(&bwp->ready_mutex);
+    }
+
+    for (core = 0; core < nb_bitmap_workers; core++) {
+        BitmapWalkerParams * bwp = &bitmap_walkers[core];
+        qemu_thread_create(&bwp->walker, 
+            migration_bitmap_worker, bwp, QEMU_THREAD_DETACHED);
+    }
+}
+
+void migration_bitmap_worker_stop(MigrationState *s)
+{
+    int core;
+
+    for (core = 0; core < nb_bitmap_workers; core++) {
+        BitmapWalkerParams * bwp = &bitmap_walkers[core];
+        bwp->keep_running = 0;
+        qemu_mutex_unlock(&bwp->ready_mutex);
+    }
+
+    DPRINTF("Bitmap workers stopped.\n");
+
+	g_free(bitmap_walkers);
+	bitmap_walkers = NULL;
+    nb_bitmap_workers = 0;
+}
+
+
+static void migration_bitmap_distribute_specific_worker(MigrationState *s, RAMBlock * block, int core, ram_addr_t start, ram_addr_t stop)
+{
+    BitmapWalkerParams * bwp = &bitmap_walkers[core];
+
+    bwp->start = start;
+    bwp->stop = stop;
+    bwp->block = block;
+
+    qemu_cond_wait(&bwp->cond, &bwp->ready_mutex);
+} 
+
+static void migration_bitmap_join_worker(MigrationState *s, int core)
+{
+    BitmapWalkerParams * bwp = &bitmap_walkers[core];
+    qemu_mutex_lock(&bwp->done_mutex);
+    qemu_cond_signal(&bwp->cond);
+    qemu_mutex_unlock(&bwp->done_mutex);
+    migration_dirty_pages += bwp->dirty_pages;
+}
+
+/*
+ * Chop up the QEMU 'bytemap' built around GET_LOG_DIRTY and handout
+ * the migration_bitmap population work to all the workers.
+ * 
+ * If there are N cpus in the hypervisor, there will be N workers
+ * which each process equal chunks of the RAM block bytemap.
+ */
+static void migration_bitmap_distribute_work(MigrationState *s, RAMBlock * block)
+{
+    uint64_t pages = block->length / TARGET_PAGE_SIZE;
+    uint64_t inc = pages / nb_bitmap_workers;
+    uint64_t remainder = pages % inc;
+    int core;
+
+    for (core = 0; core < nb_bitmap_workers; core++) {
+        ram_addr_t start = core * inc, stop = core * inc + inc;
+
+        if(core == (nb_bitmap_workers - 1))
+                stop += remainder;
+
+        start *= TARGET_PAGE_SIZE;
+        stop *= TARGET_PAGE_SIZE;
+        
+        migration_bitmap_distribute_specific_worker(s, block, core, start, stop);
+    }
 }
 
 /* Needs iothread lock! */
@@ -378,7 +564,6 @@ static inline bool migration_bitmap_set_dirty(MemoryRegion *mr,
 static void migration_bitmap_sync(void)
 {
     RAMBlock *block;
-    ram_addr_t addr;
     uint64_t num_dirty_pages_init = migration_dirty_pages;
     MigrationState *s = migrate_get_current();
     static int64_t start_time;
@@ -386,33 +571,46 @@ static void migration_bitmap_sync(void)
     static int64_t num_dirty_pages_period;
     int64_t end_time;
     int64_t bytes_xfer_now;
+    int64_t begin_time;
+    int64_t dirty_time;
 
     if (!bytes_xfer_prev) {
         bytes_xfer_prev = ram_bytes_transferred();
     }
 
+    begin_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
     if (!start_time) {
         start_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
     }
-
     trace_migration_bitmap_sync_start();
     address_space_sync_dirty_bitmap(&address_space_memory);
 
+    dirty_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
+
     QTAILQ_FOREACH(block, &ram_list.blocks, next) {
-        for (addr = 0; addr < block->length; addr += TARGET_PAGE_SIZE) {
-            if (memory_region_test_and_clear_dirty(block->mr,
-                                                   addr, TARGET_PAGE_SIZE,
-                                                   DIRTY_MEMORY_MIGRATION)) {
-                migration_bitmap_set_dirty(block->mr, addr);
-            }
+        if (!strcmp(block->idstr, "pc.ram") && nb_bitmap_workers) {
+            migration_bitmap_distribute_work(s, block);
+            continue;
+        }
+        migration_dirty_pages += migration_bitmap_sync_range(block, 0, block->length);
+    }
+
+    if (nb_bitmap_workers) {
+        int core;
+        for (core = 0; core < nb_bitmap_workers; core++) {
+            migration_bitmap_join_worker(s, core);
         }
     }
+
     trace_migration_bitmap_sync_end(migration_dirty_pages
                                     - num_dirty_pages_init);
     num_dirty_pages_period += migration_dirty_pages - num_dirty_pages_init;
     end_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
 
-    /* more than 1 second = 1000 millisecons */
+    acct_info.log_dirty_time += dirty_time - begin_time;
+    acct_info.migration_bitmap_time += end_time - dirty_time;
+
+    /* more than 1 second = 1000 milliseconds */
     if (end_time > start_time + 1000) {
         if (migrate_auto_converge()) {
             /* The following detection logic can be refined later. For now:

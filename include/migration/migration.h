@@ -45,6 +45,10 @@ struct MigrationState
     int64_t total_time;
     int64_t downtime;
     int64_t expected_downtime;
+    int64_t xmit_time;
+    int64_t ram_copy_time;
+    int64_t log_dirty_time;
+    int64_t bitmap_time;
     int64_t dirty_pages_rate;
     int64_t dirty_bytes_rate;
     bool enabled_capabilities[MIGRATION_CAPABILITY_MAX];
@@ -109,10 +113,16 @@ uint64_t skipped_mig_bytes_transferred(void);
 uint64_t skipped_mig_pages_transferred(void);
 uint64_t norm_mig_bytes_transferred(void);
 uint64_t norm_mig_pages_transferred(void);
+uint64_t norm_mig_log_dirty_time(void);
+uint64_t norm_mig_bitmap_time(void);
 uint64_t xbzrle_mig_bytes_transferred(void);
 uint64_t xbzrle_mig_pages_transferred(void);
 uint64_t xbzrle_mig_pages_overflow(void);
 uint64_t xbzrle_mig_pages_cache_miss(void);
+void *migration_bitmap_worker(void *opaque);
+void migration_bitmap_worker_start(MigrationState *s);
+void migration_bitmap_worker_stop(MigrationState *s);
+void migrate_set_state(MigrationState *s, int old_state, int new_state);
 
 void ram_handle_compressed(void *host, uint8_t ch, uint64_t size);
 

@@ -2818,6 +2818,39 @@ static int object_create(QemuOpts *opts, void *opaque)
     return 0;
 }
 
+/*
+ * Currently, only used for migration_bitmap_sync(),
+ * but can be queried by anyone in the future.
+ */
+int getNumCores(void) 
+{
+    uint32_t count;
+#if defined(WIN32)
+    SYSTEM_INFO sysinfo;
+    GetSystemInfo(&sysinfo);
+    count = sysinfo.dwNumberOfProcessors;
+#elif defined(CONFIG_BSD)
+    int nm[2];
+    size_t len = 4;
+    nm[0] = CTL_HW; 
+    nm[1] = HW_AVAILCPU;
+    sysctl(nm, 2, &count, &len, NULL, 0);
+
+    if (count < 1) {
+        nm[1] = HW_NCPU;
+        sysctl(nm, 2, &count, &len, NULL, 0);
+        if(count < 1) { 
+           count = 1; 
+        }
+    }
+#elif defined(CONFIG_LINUX)
+    count = sysconf(_SC_NPROCESSORS_ONLN);
+#else
+    count = 1;
+#endif
+    return count;
+}
+
 int main(int argc, char **argv, char **envp)
 {
     int i;

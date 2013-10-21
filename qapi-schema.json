@@ -577,6 +577,36 @@
            'cache-miss': 'int', 'overflow': 'int' } }
 
 ##
+# @MCStats
+#
+# Detailed Micro Checkpointing (MC) statistics
+#
+# @mbps: throughput of transmitting last MC 
+#
+# @xmit-time: milliseconds to transmit last MC 
+#
+# @log-dirty-time: milliseconds to GET_LOG_DIRTY for last MC 
+#
+# @migration-bitmap-time: milliseconds to prepare dirty bitmap for last MC
+#
+# @ram-copy-time: milliseconds to ram_save_live() last MC to staging memory
+#
+# @copy-mbps: throughput of ram_save_live() to staging memory for last MC 
+#
+# @checkpoints: cummulative total number of MCs generated 
+#
+# Since: 1.8
+##
+{ 'type': 'MCStats',
+  'data': {'mbps': 'number',
+           'xmit-time': 'uint64',
+           'log-dirty-time': 'uint64',
+           'migration-bitmap-time': 'uint64', 
+           'ram-copy-time': 'uint64',
+           'checkpoints' : 'uint64',
+           'copy-mbps': 'number' }}
+
+##
 # @MigrationInfo
 #
 # Information about current migration process.
@@ -622,6 +652,7 @@
   'data': {'*status': 'str', '*ram': 'MigrationStats',
            '*disk': 'MigrationStats',
            '*xbzrle-cache': 'XBZRLECacheStats',
+           '*mc': 'MCStats',
            '*total-time': 'int',
            '*expected-downtime': 'int',
            '*downtime': 'int',
@@ -661,10 +692,50 @@
 # @auto-converge: If enabled, QEMU will automatically throttle down the guest
 #          to speed up convergence of RAM migration. (since 1.6)
 #
+# @x-mc: The migration will never end, and the VM will instead be continuously
+#          micro-checkpointed (MC). Use the command migrate-set-mc-delay to 
+#          control the frequency at which the checkpoints occur. 
+#          Disabled by default. (Since 1.8)
+#
+# @mc-net-disable: Deactivate network buffering against outbound network 
+#          traffic while Micro-Checkpointing (@mc) is active.
+#          Enabled by default. Disabling will make the MC protocol inconsistent
+#          and potentially break network connections upon an actual failure.
+#          Only for performance testing. (Since 1.8)
+#
+# @mc-rdma-copy: MC requires creating a local-memory checkpoint before
+#          transmission to the destination. This requires heavy use of 
+#          memcpy() which dominates the processor pipeline. This option 
+#          makes use of *local* RDMA to perform the copy instead of the CPU.
+#          Enabled by default only if the migration transport is RDMA.
+#          Disabled by default otherwise. (Since 1.8)
+#
+# @bitworkers: Allow the QEMU migration bitmap to be scanned in parallel
+#          by using multiple processors on the host machine.
+#          This capability has no effect without also enabling @mc.
+#          Enabled by default. (Since 1.8)
+#
+# @rdma-keepalive: RDMA connections do not timeout by themselves if a peer
+#         has disconnected prematurely or failed. User-level keepalives
+#         allow the migration to abort cleanly if there is a problem with the
+#         destination host. For debugging, this can be problematic as
+#         the keepalive may cause the peer to abort prematurely if we are
+#         at a GDB breakpoint, for example.
+#         Enabled by default. (Since 1.8)
+#
 # Since: 1.2
 ##
 { 'enum': 'MigrationCapability',
-  'data': ['xbzrle', 'x-rdma-pin-all', 'auto-converge', 'zero-blocks'] }
+  'data': ['xbzrle', 
+           'x-rdma-pin-all', 
+           'auto-converge', 
+           'zero-blocks',
+           'x-mc', 
+           'mc-net-disable',
+           'mc-rdma-copy',
+           'bitworkers',
+           'rdma-keepalive'
+          ] }
 
 ##
 # @MigrationCapabilityStatus
