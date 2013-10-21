@@ -754,6 +754,29 @@ Example:
 EQMP
 
     {
+        .name       = "migrate-set-mc-delay",
+        .args_type  = "value:i",
+        .mhandler.cmd_new = qmp_marshal_input_migrate_set_mc_delay,
+    },
+
+SQMP
+migrate-set-mc-delay
+--------------------
+
+Set maximum delay (in milliseconds) between micro-checkpoints.
+
+Arguments:
+
+- "value": maximum delay (json-int)
+
+Example:
+
+-> { "execute": "migrate-set-mc-delay", "arguments": { "value": 100 } }
+<- { "return": {} }
+
+EQMP
+
+    {
         .name       = "client_migrate_info",
         .args_type  = "protocol:s,hostname:s,port:i?,tls-port:i?,cert-subject:s?",
         .params     = "protocol hostname port tls-port cert-subject",

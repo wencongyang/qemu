@@ -29,6 +29,7 @@
 #include <sys/time.h>
 #include <zlib.h>
 #include "qemu/bitmap.h"
+#include "migration/qemu-file.h"
 
 /* Needed early for CONFIG_BSD etc. */
 #include "config-host.h"
@@ -4192,6 +4193,8 @@ int main(int argc, char **argv, char **envp)
     default_drive(default_sdcard, snapshot, IF_SD, 0, SD_OPTS);
 
     register_savevm_live(NULL, "ram", 0, 4, &savevm_ram_handlers, NULL);
+    register_savevm(NULL, "mc", -1, MC_VERSION, mc_info_save, 
+                                mc_info_load, NULL); 
 
     if (nb_numa_nodes > 0) {
         int i;

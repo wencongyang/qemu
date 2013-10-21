@@ -960,6 +960,20 @@ Set maximum tolerated downtime (in seconds) for migration.
 ETEXI
 
     {
+        .name       = "migrate-set-mc-delay",
+        .args_type  = "value:i",
+        .params     = "value",
+        .help       = "set maximum delay (in milliseconds) between micro-checkpoints",
+        .mhandler.cmd = hmp_migrate_set_mc_delay,
+    },
+
+STEXI
+@item migrate_set_downtime @var{second}
+@findex migrate_set_downtime
+Set maximum tolerated downtime (in seconds) for migration.
+ETEXI
+
+    {
         .name       = "migrate_set_capability",
         .args_type  = "capability:s,state:b",
         .params     = "capability state",

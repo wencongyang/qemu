@@ -2135,6 +2135,19 @@
 { 'command': 'migrate_set_downtime', 'data': {'value': 'number'} }
 
 ##
+# @migrate-set-mc-delay
+#
+# Set delay (in milliseconds) between micro checkpoints.
+#
+# @value: maximum delay in milliseconds 
+#
+# Returns: nothing on success
+#
+# Since: 1.6
+##
+{ 'command': 'migrate-set-mc-delay', 'data': {'value': 'int'} }
+
+##
 # @migrate_set_speed
 #
 # Set maximum speed for migration.
