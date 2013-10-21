@@ -419,10 +419,7 @@ QEMUFile *qemu_fdopen(int fd, const char *mode)
 {
     QEMUFileSocket *s;
 
-    if (mode == NULL ||
-	(mode[0] != 'r' && mode[0] != 'w') ||
-	mode[1] != 'b' || mode[2] != 0) {
-        fprintf(stderr, "qemu_fdopen: Argument validity check failed\n");
+    if (qemu_file_mode_is_not_valid(mode)) {
         return NULL;
     }
 

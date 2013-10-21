@@ -35,13 +35,14 @@ struct MigrationState
     int64_t bandwidth_limit;
     size_t bytes_xfer;
     size_t xfer_limit;
-    QemuThread thread;
+    QemuThread *thread;
     QEMUBH *cleanup_bh;
     QEMUFile *file;
 
     int state;
     MigrationParams params;
     double mbps;
+    double copy_mbps;
     int64_t total_time;
     int64_t downtime;
     int64_t expected_downtime;
@@ -54,6 +55,7 @@ struct MigrationState
     bool enabled_capabilities[MIGRATION_CAPABILITY_MAX];
     int64_t xbzrle_cache_size;
     int64_t setup_time;
+    int64_t checkpoints;
 };
 
 void process_incoming_migration(QEMUFile *f);
@@ -137,6 +139,12 @@ enum {
     MIG_STATE_MC,
     MIG_STATE_COMPLETED,
 };
+
+int mc_enable_buffering(void);
+int mc_start_buffer(void);
+void mc_init_checkpointer(MigrationState *s);
+void mc_process_incoming_checkpoints_if_requested(QEMUFile *f);
+
 void ram_handle_compressed(void *host, uint8_t ch, uint64_t size);
 
 /**
@@ -207,9 +215,13 @@ int ram_control_copy_page(QEMUFile *f,
                              long size);
 
 int migrate_use_mc(void);
+int migrate_use_mc_net(void);
 int migrate_use_mc_rdma_copy(void);
 
 #define MC_VERSION 1
+
+int mc_info_load(QEMUFile *f, void *opaque, int version_id);
+void mc_info_save(QEMUFile *f, void *opaque);
 
 void qemu_rdma_info_save(QEMUFile *f, void *opaque);
 int qemu_rdma_info_load(QEMUFile *f, void *opaque, int version_id);

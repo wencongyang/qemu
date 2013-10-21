@@ -630,6 +630,8 @@
 #                migration statistics, only returned if XBZRLE feature is on and
 #                status is 'active' or 'completed' (since 1.2)
 #
+# @mc: #options @MCStats containing details Micro-Checkpointing statistics
+#
 # @total-time: #optional total amount of milliseconds since migration started.
 #        If migration has ended, it returns the total migration
 #        time. (since 1.2)

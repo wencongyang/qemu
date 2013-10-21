@@ -202,6 +202,23 @@ void hmp_info_migrate(Monitor *mon, const QDict *qdict)
                        info->disk->total >> 10);
     }
 
+    if (info->has_mc) {
+        monitor_printf(mon, "checkpoints: %" PRIu64 "\n",
+                       info->mc->checkpoints);
+        monitor_printf(mon, "xmit_time: %" PRIu64 " ms\n",
+                       info->mc->xmit_time);
+        monitor_printf(mon, "log_dirty_time: %" PRIu64 " ms\n",
+                       info->mc->log_dirty_time);
+        monitor_printf(mon, "migration_bitmap_time: %" PRIu64 " ms\n",
+                       info->mc->migration_bitmap_time);
+        monitor_printf(mon, "ram_copy_time: %" PRIu64 " ms\n",
+                       info->mc->ram_copy_time);
+        monitor_printf(mon, "copy_mbps: %0.2f mbps\n",
+                       info->mc->copy_mbps);
+        monitor_printf(mon, "throughput: %0.2f mbps\n",
+                       info->mc->mbps);
+    }
+
     if (info->has_xbzrle_cache) {
         monitor_printf(mon, "cache size: %" PRIu64 " bytes\n",
                        info->xbzrle_cache->cache_size);
