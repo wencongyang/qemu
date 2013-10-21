@@ -76,11 +76,21 @@ typedef int (QEMURamHookFunc)(QEMUFile *f, void *opaque, uint64_t flags);
  * This function allows override of where the RAM page
  * is saved (such as RDMA, for example.)
  */
-typedef size_t (QEMURamSaveFunc)(QEMUFile *f, void *opaque,
+typedef int (QEMURamSaveFunc)(QEMUFile *f, void *opaque,
                                ram_addr_t block_offset,
+                               uint8_t *host_addr,
                                ram_addr_t offset,
-                               size_t size,
+                               long size,
                                int *bytes_sent);
+
+/*
+ * This function allows override of where the RAM page
+ * is saved (such as RDMA, for example.)
+ */
+typedef int (QEMURamLoadFunc)(QEMUFile *f,
+                               void *opaque,
+                               void *host_addr,
+                               long size);
 
 typedef struct QEMUFileOps {
     QEMUFilePutBufferFunc *put_buffer;
@@ -92,12 +102,14 @@ typedef struct QEMUFileOps {
     QEMURamHookFunc *after_ram_iterate;
     QEMURamHookFunc *hook_ram_load;
     QEMURamSaveFunc *save_page;
+    QEMURamLoadFunc *load_page;
 } QEMUFileOps;
 
 QEMUFile *qemu_fopen_ops(void *opaque, const QEMUFileOps *ops);
 QEMUFile *qemu_fopen(const char *filename, const char *mode);
 QEMUFile *qemu_fdopen(int fd, const char *mode);
 QEMUFile *qemu_fopen_socket(int fd, const char *mode);
+QEMUFile *qemu_fopen_mc(void *opaque, const char *mode);
 QEMUFile *qemu_popen_cmd(const char *command, const char *mode);
 int qemu_get_fd(QEMUFile *f);
 int qemu_fclose(QEMUFile *f);

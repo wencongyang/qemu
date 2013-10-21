@@ -684,7 +684,7 @@ static int ram_save_block(QEMUFile *f, bool last_stage)
             /* In doubt sent page as normal */
             bytes_sent = -1;
             ret = ram_control_save_page(f, block->offset,
-                               offset, TARGET_PAGE_SIZE, &bytes_sent);
+                       block->host, offset, TARGET_PAGE_SIZE, &bytes_sent);
 
             if (ret != RAM_SAVE_CONTROL_NOT_SUPP) {
                 if (ret != RAM_SAVE_CONTROL_DELAYED) {
@@ -712,9 +712,11 @@ static int ram_save_block(QEMUFile *f, bool last_stage)
             /* XBZRLE overflow or normal page */
             if (bytes_sent == -1) {
                 bytes_sent = save_block_hdr(f, block, offset, cont, RAM_SAVE_FLAG_PAGE);
-                qemu_put_buffer_async(f, p, TARGET_PAGE_SIZE);
-                bytes_sent += TARGET_PAGE_SIZE;
-                acct_info.norm_pages++;
+                if (ret != RAM_SAVE_CONTROL_DELAYED) {
+                    qemu_put_buffer_async(f, p, TARGET_PAGE_SIZE);
+                    bytes_sent += TARGET_PAGE_SIZE;
+                    acct_info.norm_pages++;
+                }
             }
 
             /* if page is unmodified, continue to the next */
@@ -1133,13 +1135,18 @@ static int ram_load(QEMUFile *f, void *opaque, int version_id)
             ram_handle_compressed(host, ch, TARGET_PAGE_SIZE);
         } else if (flags & RAM_SAVE_FLAG_PAGE) {
             void *host;
+            int r;
 
             host = host_from_stream_offset(f, addr, flags);
             if (!host) {
                 return -EINVAL;
             }
 
-            qemu_get_buffer(f, host, TARGET_PAGE_SIZE);
+            r = ram_control_load_page(f, host, TARGET_PAGE_SIZE);
+
+            if (r == RAM_LOAD_CONTROL_NOT_SUPP) {
+                qemu_get_buffer(f, host, TARGET_PAGE_SIZE);
+            }
         } else if (flags & RAM_SAVE_FLAG_XBZRLE) {
             void *host = host_from_stream_offset(f, addr, flags);
             if (!host) {
