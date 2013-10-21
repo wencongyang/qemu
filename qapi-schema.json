@@ -169,6 +169,8 @@
 #
 # @save-vm: guest is paused to save the VM state
 #
+# @checkpoint-vm: guest is paused to checkpoint the VM state
+#
 # @shutdown: guest is shut down (and -no-shutdown is in use)
 #
 # @suspended: guest is suspended (ACPI S3)
@@ -181,7 +183,7 @@
   'data': [ 'debug', 'inmigrate', 'internal-error', 'io-error', 'paused',
             'postmigrate', 'prelaunch', 'finish-migrate', 'restore-vm',
             'running', 'save-vm', 'shutdown', 'suspended', 'watchdog',
-            'guest-panicked' ] }
+            'guest-panicked', 'checkpoint-vm' ] }
 
 ##
 # @SnapshotInfo

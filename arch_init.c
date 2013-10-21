@@ -199,7 +199,7 @@ typedef struct AccountingInfo {
 
 static AccountingInfo acct_info;
 
-static void acct_clear(void)
+void acct_clear(void)
 {
     memset(&acct_info, 0, sizeof(acct_info));
 }

@@ -119,6 +119,8 @@ uint64_t xbzrle_mig_bytes_transferred(void);
 uint64_t xbzrle_mig_pages_transferred(void);
 uint64_t xbzrle_mig_pages_overflow(void);
 uint64_t xbzrle_mig_pages_cache_miss(void);
+void acct_clear(void);
+
 void *migration_bitmap_worker(void *opaque);
 void migration_bitmap_worker_start(MigrationState *s);
 void migration_bitmap_worker_stop(MigrationState *s);
