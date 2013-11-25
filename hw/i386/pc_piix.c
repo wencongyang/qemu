@@ -59,6 +59,7 @@ static const int ide_irq[MAX_IDE_BUS] = { 14, 15 };
 
 static bool has_pvpanic;
 static bool has_pci_info = true;
+static bool has_acpi_build = true;
 
 /* PC hardware initialisation */
 static void pc_init1(QEMUMachineInitArgs *args,
@@ -122,6 +123,9 @@ static void pc_init1(QEMUMachineInitArgs *args,
     }
 
     guest_info = pc_guest_info_init(below_4g_mem_size, above_4g_mem_size);
+
+    guest_info->has_acpi_build = has_acpi_build;
+
     guest_info->has_pci_info = has_pci_info;
     guest_info->isapc_ram_fw = !pci_enabled;
 
@@ -240,6 +244,7 @@ static void pc_compat_1_6(QEMUMachineInitArgs *args)
 {
     has_pci_info = false;
     rom_file_in_ram = false;
+    has_acpi_build = false;
 }
 
 static void pc_compat_1_5(QEMUMachineInitArgs *args)
@@ -304,6 +309,7 @@ static void pc_init_pci_1_2(QEMUMachineInitArgs *args)
 static void pc_init_pci_no_kvmclock(QEMUMachineInitArgs *args)
 {
     has_pci_info = false;
+    has_acpi_build = false;
     disable_kvm_pv_eoi();
     enable_compat_apic_id_mode();
     pc_init1(args, 1, 0);
@@ -312,6 +318,7 @@ static void pc_init_pci_no_kvmclock(QEMUMachineInitArgs *args)
 static void pc_init_isa(QEMUMachineInitArgs *args)
 {
     has_pci_info = false;
+    has_acpi_build = false;
     if (!args->cpu_model) {
         args->cpu_model = "486";
     }

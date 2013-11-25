@@ -48,7 +48,9 @@
 #include "qmp-commands.h"
 #include "trace.h"
 #include "exec/cpu-all.h"
+#include "exec/memory-physical.h"
 #include "hw/acpi/acpi.h"
+#include "qemu/host-utils.h"
 
 #ifdef DEBUG_ARCH_INIT
 #define DPRINTF(fmt, ...) \
@@ -371,11 +373,18 @@ ram_addr_t migration_bitmap_find_and_reset_dirty(MemoryRegion *mr,
     return (next - base) << TARGET_PAGE_BITS;
 }
 
-static inline bool migration_bitmap_set_dirty(MemoryRegion *mr,
-                                              ram_addr_t offset)
+static inline bool migration_bitmap_set_dirty(ram_addr_t addr)
 {
-    return test_and_set_bit((mr->ram_addr + offset) >> TARGET_PAGE_BITS, 
-                                migration_bitmap);
+    bool ret;
+    int nr = addr >> TARGET_PAGE_BITS;
+
+    ret = test_and_set_bit(nr, migration_bitmap); 
+         
+     if (!ret) { 
+         migration_dirty_pages++; 
+     } 
+
+     return ret;
 }
 
 typedef struct BitmapWalkerParams {
@@ -412,6 +421,7 @@ BitmapWalkerParams *bitmap_walkers = NULL;
  * in a multi-threaded fashion until a patch is ready to process
  * the bitmaps from GET_LOG_DIRTY directly.
  */
+/*
 static uint64_t migration_worker_range(RAMBlock *block, 
                             ram_addr_t start, ram_addr_t stop)
 {
@@ -431,11 +441,13 @@ static uint64_t migration_worker_range(RAMBlock *block,
 
     return dirty_pages;
 }
+*/
 
 /*
  * The worker sleeps until it gets some work to transform a 
  * chunk of bitmap from KVM to the migration_bitmap.
  */
+/*
 void *migration_bitmap_worker(void *opaque)
 {
     BitmapWalkerParams * bwp = opaque;
@@ -458,17 +470,18 @@ void *migration_bitmap_worker(void *opaque)
 
     return NULL;
 }
+*/
 
+/* 
+ * CPUs N - 1 are reserved for N - 1 worker threads 
+ * processing the pc.ram bytemap => migration_bitmap.
+ * The migration thread goes on the last CPU,
+ * which process the remaining, smaller RAMblocks.
+ */
 void migration_bitmap_worker_start(MigrationState *s)
 {
     int core;
 
-    /* 
-     * CPUs N - 1 are reserved for N - 1 worker threads 
-     * processing the pc.ram bytemap => migration_bitmap.
-     * The migration thread goes on the last CPU,
-     * which process the remaining, smaller RAMblocks.
-     */
     nb_bitmap_workers = getNumCores() - 1;
 
     bitmap_walkers = g_malloc0(sizeof(struct BitmapWalkerParams) * 
@@ -488,9 +501,9 @@ void migration_bitmap_worker_start(MigrationState *s)
     }
 
     for (core = 0; core < nb_bitmap_workers; core++) {
-        BitmapWalkerParams * bwp = &bitmap_walkers[core];
-        qemu_thread_create(&bwp->walker, 
-            migration_bitmap_worker, bwp, QEMU_THREAD_DETACHED);
+//        BitmapWalkerParams * bwp = &bitmap_walkers[core];
+//        qemu_thread_create(&bwp->walker, 
+//            migration_bitmap_worker, bwp, QEMU_THREAD_DETACHED);
     }
 }
 
@@ -511,6 +524,7 @@ void migration_bitmap_worker_stop(MigrationState *s)
     nb_bitmap_workers = 0;
 }
 
+/*
 
 static void migration_bitmap_distribute_specific_worker(MigrationState *s, RAMBlock * block, int core, ram_addr_t start, ram_addr_t stop)
 {
@@ -531,6 +545,7 @@ static void migration_bitmap_join_worker(MigrationState *s, int core)
     qemu_mutex_unlock(&bwp->done_mutex);
     migration_dirty_pages += bwp->dirty_pages;
 }
+*/
 
 /*
  * Chop up the QEMU 'bytemap' built around GET_LOG_DIRTY and handout
@@ -539,6 +554,7 @@ static void migration_bitmap_join_worker(MigrationState *s, int core)
  * If there are N cpus in the hypervisor, there will be N workers
  * which each process equal chunks of the RAM block bytemap.
  */
+/*
 static void migration_bitmap_distribute_work(MigrationState *s, RAMBlock * block)
 {
     uint64_t pages = block->length / TARGET_PAGE_SIZE;
@@ -558,6 +574,46 @@ static void migration_bitmap_distribute_work(MigrationState *s, RAMBlock * block
         migration_bitmap_distribute_specific_worker(s, block, core, start, stop);
     }
 }
+*/
+
+static void migration_bitmap_sync_range(ram_addr_t start, ram_addr_t length)
+{
+    ram_addr_t addr;
+    unsigned long page = BIT_WORD(start >> TARGET_PAGE_BITS);
+
+    /* start address is aligned at the start of a word? */
+    if (((page * BITS_PER_LONG) << TARGET_PAGE_BITS) == start) {
+        int k;
+        int nr = BITS_TO_LONGS(length >> TARGET_PAGE_BITS);
+        unsigned long *src = ram_list.dirty_memory[DIRTY_MEMORY_MIGRATION];
+
+//        printf("XXXX:optimized start %lx page %lx length %lu\n", start, page, length);
+
+        for (k = page; k < page + nr; k++) {
+            if (src[k]) {
+                unsigned long new_dirty;
+                new_dirty = ~migration_bitmap[k];
+                migration_bitmap[k] |= src[k];
+                new_dirty &= src[k];
+                migration_dirty_pages += ctpopl(new_dirty);
+                src[k] = 0;
+            }
+        }
+    } else {
+//        printf("XXXX:not optimized start %lx length %lu\n", start, length);
+        for (addr = 0; addr < length; addr += TARGET_PAGE_SIZE) {
+            if (cpu_physical_memory_get_dirty(start + addr,
+                                              TARGET_PAGE_SIZE,
+                                              DIRTY_MEMORY_MIGRATION)) {
+                cpu_physical_memory_reset_dirty(start + addr,
+                                                TARGET_PAGE_SIZE,
+                                                DIRTY_MEMORY_MIGRATION);
+                migration_bitmap_set_dirty(start + addr);
+            }
+        }
+    }
+}
+
 
 /* Needs iothread lock! */
 
@@ -588,6 +644,7 @@ static void migration_bitmap_sync(void)
     dirty_time = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
 
     QTAILQ_FOREACH(block, &ram_list.blocks, next) {
+/*
         if (!strcmp(block->idstr, "pc.ram") && nb_bitmap_workers) {
             migration_bitmap_distribute_work(s, block);
             continue;
@@ -600,6 +657,10 @@ static void migration_bitmap_sync(void)
         for (core = 0; core < nb_bitmap_workers; core++) {
             migration_bitmap_join_worker(s, core);
         }
+*/
+//        printf("XXXX: name %s addr %lx length %lu\n",
+//               block->idstr, block->mr->ram_addr, block->length);
+        migration_bitmap_sync_range(block->mr->ram_addr, block->length);
     }
 
     trace_migration_bitmap_sync_end(migration_dirty_pages

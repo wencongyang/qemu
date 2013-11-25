@@ -645,9 +645,8 @@ static const RunStateTransition runstate_transitions_def[] = {
     { RUN_STATE_WATCHDOG, RUN_STATE_FINISH_MIGRATE },
     { RUN_STATE_WATCHDOG, RUN_STATE_CHECKPOINT_VM },
 
-    { RUN_STATE_GUEST_PANICKED, RUN_STATE_PAUSED },
+    { RUN_STATE_GUEST_PANICKED, RUN_STATE_RUNNING },
     { RUN_STATE_GUEST_PANICKED, RUN_STATE_FINISH_MIGRATE },
-    { RUN_STATE_GUEST_PANICKED, RUN_STATE_DEBUG },
 
     { RUN_STATE_MAX, RUN_STATE_MAX },
 };
@@ -693,8 +692,7 @@ int runstate_is_running(void)
 bool runstate_needs_reset(void)
 {
     return runstate_check(RUN_STATE_INTERNAL_ERROR) ||
-        runstate_check(RUN_STATE_SHUTDOWN) ||
-        runstate_check(RUN_STATE_GUEST_PANICKED);
+        runstate_check(RUN_STATE_SHUTDOWN);
 }
 
 StatusInfo *qmp_query_status(Error **errp)
@@ -4377,6 +4375,9 @@ int main(int argc, char **argv, char **envp)
      * when bus is created by qdev.c */
     qemu_register_reset(qbus_reset_all_fn, sysbus_get_default());
     qemu_run_machine_init_done_notifiers();
+
+    /* Done notifiers can load ROMs */
+    rom_load_done();
 
     qemu_system_reset(VMRESET_SILENT);
     if (loadvm) {

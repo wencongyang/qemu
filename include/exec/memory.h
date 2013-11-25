@@ -33,12 +33,10 @@
 typedef struct MemoryRegionOps MemoryRegionOps;
 typedef struct MemoryRegionMmio MemoryRegionMmio;
 
-/* Must match *_DIRTY_FLAGS in cpu-all.h.  To be replaced with dynamic
- * registration.
- */
 #define DIRTY_MEMORY_VGA       0
 #define DIRTY_MEMORY_CODE      1
-#define DIRTY_MEMORY_MIGRATION 3
+#define DIRTY_MEMORY_MIGRATION 2
+#define DIRTY_MEMORY_NUM       3	/* num of dirty bits */
 
 struct MemoryRegionMmio {
     CPUReadMemoryFunc *read[3];
@@ -153,7 +151,7 @@ struct MemoryRegion {
     bool flush_coalesced_mmio;
     MemoryRegion *alias;
     hwaddr alias_offset;
-    unsigned priority;
+    int priority;
     bool may_overlap;
     QTAILQ_HEAD(subregions, MemoryRegion) subregions;
     QTAILQ_ENTRY(MemoryRegion) subregions_link;
@@ -779,7 +777,7 @@ void memory_region_add_subregion(MemoryRegion *mr,
 void memory_region_add_subregion_overlap(MemoryRegion *mr,
                                          hwaddr offset,
                                          MemoryRegion *subregion,
-                                         unsigned priority);
+                                         int priority);
 
 /**
  * memory_region_get_ram_addr: Get the ram address associated with a memory
@@ -1055,7 +1053,9 @@ void *address_space_map(AddressSpace *as, hwaddr addr,
 void address_space_unmap(AddressSpace *as, void *buffer, hwaddr len,
                          int is_write, hwaddr access_len);
 
-
+/* This should not be used by devices.  */
+MemoryRegion *qemu_ram_addr_from_host(void *ptr, ram_addr_t *ram_addr);
+void qemu_ram_set_idstr(ram_addr_t addr, const char *name, DeviceState *dev);
 #endif
 
 #endif
