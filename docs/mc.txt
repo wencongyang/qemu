@@ -161,7 +161,7 @@ Next, start the VM that you want to protect using your standard procedures.
 Enable MC like this:
 
 QEMU Monitor Command:
-$ migrate_set_capability x-mc on # disabled by default
+$ migrate_set_capability mc on # disabled by default
 
 Currently, only one network interface is supported, *and* currently you
 must ensure that the root disk of your VM is booted either directly from

@@ -2720,7 +2720,7 @@ static int qemu_rdma_source_init(RDMAContext *rdma,
      * Will be validated against destination's actual capabilities
      * after the connect() completes.
      */
-    rdma->pin_all = s->enabled_capabilities[MIGRATION_CAPABILITY_X_RDMA_PIN_ALL];
+    rdma->pin_all = s->enabled_capabilities[MIGRATION_CAPABILITY_RDMA_PIN_ALL];
     rdma->do_keepalive = s->enabled_capabilities[MIGRATION_CAPABILITY_RDMA_KEEPALIVE];
 
     ret = qemu_rdma_resolve_host(rdma, temp);

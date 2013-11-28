@@ -706,10 +706,9 @@
 #          This feature allows us to minimize migration traffic for certain work
 #          loads, by sending compressed difference of the pages
 #
-# @x-rdma-pin-all: Controls whether or not the entire VM memory footprint is
+# @rdma-pin-all: Controls whether or not the entire VM memory footprint is
 #          mlock()'d on demand or all at once. Refer to docs/rdma.txt for usage.
-#          Disabled by default. Experimental: may (or may not) be renamed after
-#          further testing is complete. (since 1.6)
+#          Disabled by default. (since 1.7)
 #
 # @zero-blocks: During storage migration encode blocks of zeroes efficiently. This
 #          essentially saves 1MB of zeroes per block on the wire. Enabling requires
@@ -720,7 +719,7 @@
 # @auto-converge: If enabled, QEMU will automatically throttle down the guest
 #          to speed up convergence of RAM migration. (since 1.6)
 #
-# @x-mc: The migration will never end, and the VM will instead be continuously
+# @mc: The migration will never end, and the VM will instead be continuously
 #          micro-checkpointed (MC). Use the command migrate-set-mc-delay to 
 #          control the frequency at which the checkpoints occur. 
 #          Disabled by default. (Since 1.8)
@@ -755,10 +754,10 @@
 ##
 { 'enum': 'MigrationCapability',
   'data': ['xbzrle', 
-           'x-rdma-pin-all', 
+           'rdma-pin-all', 
            'auto-converge', 
            'zero-blocks',
-           'x-mc', 
+           'mc', 
            'mc-net-disable',
            'mc-rdma-copy',
            'bitworkers',
